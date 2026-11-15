@@ -5,7 +5,7 @@ Callback data used by the buttons:
     q:<text>      log <text> through the shared grammar, e.g. q:coffee
     undo:<id>     undo an operation
     habit:<slug>  toggle a habit for today
-    ok / no       confirm or cancel the free-text message being replied to
+    ok:<id>, no:<id>  confirm or cancel a previewed free-text message (Draft id)
     habits, today, menu
 """
 
@@ -13,8 +13,10 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from html import escape
 
+from parsing import parser
 from parsing.describe import describe
 from parsing.grammar import parse
+from parsing.models import Draft
 from tracking import days, fmt, logbook, metrics
 from tracking.logbook import LogError, TrackerLog
 from tracking.models import AppSettings, Entry, Goal, Operation, Tracker
@@ -64,17 +66,21 @@ def _problems(errors) -> Reply:
     return Reply("⚠️ " + "\n".join(escape(e) for e in errors))
 
 
-def log(text: str) -> Reply:
-    """Parse and save straight away (commands and buttons)."""
-    parsed = parse(text)
-    if not parsed.ok:
-        return _problems(parsed.errors or ["Nothing to log."])
+def _saved(intents, raw_text: str) -> Reply:
     try:
-        op = logbook.apply(parsed.intents, source=SOURCE, raw_text=text)
+        op = logbook.apply(intents, source=SOURCE, raw_text=raw_text)
     except LogError as e:
         return _problems([str(e)])
     settings = AppSettings.load()
-    return Reply("\n".join(f"✓ {_line(i, settings)}" for i in parsed.intents), _undo_button(op))
+    return Reply("\n".join(f"✓ {_line(i, settings)}" for i in intents), _undo_button(op))
+
+
+def log(text: str) -> Reply:
+    """Parse with the grammar and save straight away (commands and buttons)."""
+    parsed = parse(text)
+    if not parsed.ok:
+        return _problems(parsed.errors or ["Nothing to log."])
+    return _saved(parsed.intents, text)
 
 
 def command(word: str, args: str) -> Reply:
@@ -99,19 +105,36 @@ def scale(tracker: Tracker) -> Reply:
 
 
 def preview(text: str) -> Reply:
-    """Free text: show what would be saved and ask first."""
-    parsed = parse(text)
-    if not parsed.ok:
-        if not parsed.intents and parsed.errors:
-            return Reply("⚠️ " + "\n".join(escape(e) for e in parsed.errors) + "\n\n/help shows what I understand.")
-        return _problems(parsed.errors or ["Nothing to log."])
+    """Free text: show what would be saved and ask first. Uses the shared
+    parser, so sentences the grammar can't read go to Claude."""
+    result = parser.interpret(text)
+    if not result.ok:
+        reply = _problems(result.errors or ["Nothing to log."])
+        if not result.intents:
+            reply.text += "\n\n/help shows what I understand."
+        return reply
+    draft = parser.save_draft(result, SOURCE)
+    lines = "\n".join(f"+ {escape(line)}" for line in result.lines)
+    ignored = f"\n\nNot logged: “{escape(result.ignored)}”" if result.ignored else ""
+    return Reply(f"Save this?\n{lines}{ignored}", [[("✓ Save", f"ok:{draft.pk}"), ("✕ Cancel", f"no:{draft.pk}")]])
+
+
+def confirm(draft_id: int) -> Reply:
+    draft = Draft.objects.filter(pk=draft_id).first()
+    if draft is None:
+        return Reply("That preview has expired. Send the message again.")
     try:
-        logbook.check(parsed.intents)
+        intents = parser.draft_intents(draft)
     except LogError as e:
         return _problems([str(e)])
-    settings = AppSettings.load()
-    lines = "\n".join(f"+ {escape(describe(i, settings))}" for i in parsed.intents)
-    return Reply(f"Save this?\n{lines}", [[("✓ Save", "ok"), ("✕ Cancel", "no")]])
+    reply = _saved(intents, draft.text)
+    draft.delete()
+    return reply
+
+
+def cancel(draft_id: int) -> Reply:
+    Draft.objects.filter(pk=draft_id).delete()
+    return Reply("Cancelled. Nothing was saved.")
 
 
 def undo(op_id: int) -> Reply:

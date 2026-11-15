@@ -14,8 +14,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
+from parsing import parser
 from parsing.describe import describe
 from parsing.grammar import parse, parse_duration
+from parsing.models import Draft
 from tracking import days, fmt, logbook, metrics
 from tracking.logbook import DayNoteLog, DayTagLog, ExpenseLog, LogError, TrackerLog, WorkoutLog
 from tracking.models import (
@@ -486,47 +488,74 @@ def log(request):
     return _commit(intents)
 
 
-def _palette(text: str):
-    """(intents, preview lines, errors, navigation target)."""
-    text = text.strip()
-    if text.lower().startswith(("go ", "goto ", "> ")):
-        target = text.split(None, 1)[1].strip().lower() if " " in text else ""
-        for key, label, name in NAV:
-            if target and (key.startswith(target) or label.lower().startswith(target)):
-                return [], [f"Go to {label}"], [], reverse(name)
-        return [], [], [f"No page called “{target}”."], None
-    parsed = parse(text)
-    errors = list(parsed.errors)
-    lines = []
-    if parsed.intents and not errors:
-        try:
-            logbook.check(parsed.intents)  # validate first: describe assumes valid values
-            lines = [describe(i) for i in parsed.intents]
-        except LogError as e:
-            errors.append(str(e))
-    return parsed.intents, lines, errors, None
+def _navigation(text: str):
+    """("go sleep") -> (label, url), or None if this isn't a navigation command."""
+    if not text.lower().startswith(("go ", "goto ", "> ")):
+        return None
+    target = text.split(None, 1)[1].strip().lower() if " " in text else ""
+    for key, label, name in NAV:
+        if target and (key.startswith(target) or label.lower().startswith(target)):
+            return label, reverse(name)
+    return target, None
+
+
+def _preview(request, result=None, **context):
+    if result is not None:
+        context |= {"lines": result.lines if result.ok else [], "errors": result.errors,
+                    "ignored": result.ignored, "tier": result.tier, "text": result.text}
+    return render(request, "web/partials/palette_preview.html", context)
 
 
 @require_POST
 def palette_parse(request):
-    text = request.POST.get("text", "")
-    _, lines, errors, target = _palette(text)
-    return render(request, "web/partials/palette_preview.html", {
-        "text": text.strip(), "lines": lines, "errors": errors, "navigate": target is not None,
-    })
+    """Live preview while typing: grammar only, so no API call per keystroke."""
+    text = request.POST.get("text", "").strip()
+    if nav := _navigation(text):
+        label, url = nav
+        if url:
+            return _preview(request, lines=[f"Go to {label}"], navigate=True, text=text)
+        return _preview(request, errors=[f"No page called “{label}”."], text=text)
+    result = parser.interpret(text, use_llm=False)
+    ask_claude = bool(text) and not result.ok and parser.llm_enabled()
+    return _preview(request, result, ask_claude=ask_claude)
 
 
 @require_POST
 def palette_confirm(request):
-    text = request.POST.get("text", "")
-    intents, _, errors, target = _palette(text)
-    if target:
-        response = _events(**{"palette-close": {}})
-        response["HX-Location"] = json.dumps({"path": target, "target": "body"})
+    text = request.POST.get("text", "").strip()
+    close = {"palette-close": {}}
+    if nav := _navigation(text):
+        if not nav[1]:
+            return _error(f"No page called “{nav[0]}”.")
+        response = _events(**close)
+        response["HX-Location"] = json.dumps({"path": nav[1], "target": "body"})
         return response
-    if errors or not intents:
-        return _error(errors[0] if errors else "Type something to log.")
-    return _commit(intents, raw_text=text, **{"palette-close": {}})
+
+    # Second Enter on a Claude preview: save exactly what was shown.
+    draft = Draft.objects.filter(pk=request.POST.get("draft") or 0, text=text, source="web").first()
+    if draft:
+        try:
+            intents = parser.draft_intents(draft)
+        except LogError as e:
+            return _error(e)
+        draft.delete()
+        return _commit(intents, raw_text=text, **close)
+
+    result = parser.interpret(text, use_llm=False)
+    if result.ok:
+        return _commit(result.intents, raw_text=text, **close)
+    if not text:
+        return _error("Type something to log.")
+    if not parser.llm_enabled():
+        return _error(result.errors[0])
+
+    # The grammar couldn't read it: ask Claude, then show the result for confirmation.
+    result = parser.interpret(text)
+    context = {"draft": parser.save_draft(result, "web")} if result.ok else {}
+    response = _preview(request, result, **context)
+    response["HX-Retarget"] = "#palette-preview"
+    response["HX-Reswap"] = "innerHTML"
+    return response
 
 
 @require_POST

@@ -1,8 +1,11 @@
 {% if errors %}
   <ul class="preview errors">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  {% if ask_claude %}<p class="hint">Press <kbd>↵</kbd> to let Claude interpret this. You'll see the result before anything is saved.</p>{% endif %}
 {% elif lines %}
+  {% if draft %}<input type="hidden" name="draft" value="{{ draft.pk }}">{% endif %}
   <ul class="preview">{% for line in lines %}<li><span class="tick">{% if navigate %}→{% else %}+{% endif %}</span>{{ line }}</li>{% endfor %}</ul>
-  <p class="hint">Press <kbd>↵</kbd> to {% if navigate %}go{% else %}save{% endif %}.</p>
+  {% if ignored %}<p class="hint warn">Not logged: “{{ ignored }}”</p>{% endif %}
+  <p class="hint">{% if tier == "llm" %}Interpreted by Claude. {% endif %}Press <kbd>↵</kbd> {% if draft %}again {% endif %}to {% if navigate %}go{% else %}save{% endif %}.</p>
 {% else %}
   <div class="examples">
     <p class="hint">Type what happened. Separate several things with commas.</p>
@@ -17,5 +20,6 @@
       <dt>yesterday coffee 3 · 2026-11-01 spent 20 food</dt><dd>backfill</dd>
       <dt>go sleep</dt><dd>open a page</dd>
     </dl>
+    <p class="hint">Plain sentences work too when the Claude API key is set.</p>
   </div>
 {% endif %}

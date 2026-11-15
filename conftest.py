@@ -14,6 +14,12 @@ def local(year, month, day, hour=12, minute=0):
 
 
 @pytest.fixture(autouse=True)
+def no_real_llm(settings):
+    """Tests never call the Anthropic API, whatever is in .env."""
+    settings.ANTHROPIC_API_KEY = ""
+
+
+@pytest.fixture(autouse=True)
 def configured(db):
     defaults.install()
     s = AppSettings.load()

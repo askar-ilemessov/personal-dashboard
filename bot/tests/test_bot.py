@@ -180,10 +180,11 @@ async def test_mistakes_are_explained_and_save_nothing(chat):
 async def test_free_text_asks_before_saving(chat):
     reply = await chat.sent("2 coffees, spent 12.5 food milk, legs 60")
     assert reply.text == "Save this?\n+ Coffee +2\n+ $12.50 · Groceries · milk\n+ Workout: Legs · 1h"
-    assert buttons(reply) == ["ok", "no"]
+    ok, no = buttons(reply)
+    assert ok.startswith("ok:") and no.startswith("no:")
     assert await count(Entry) == 0  # nothing yet
 
-    calls = await chat.press("ok", on=reply)
+    calls = await chat.press(ok, on=reply)
     edit = next(c for c in calls if isinstance(c, EditMessageText))
     assert edit.text.startswith("✓ Coffee +2 · 2 today") and buttons(edit)[0].startswith("undo:")
     assert await count(Entry) == 1 and await count(Expense) == 1 and await count(Workout) == 1
@@ -191,7 +192,7 @@ async def test_free_text_asks_before_saving(chat):
 
 async def test_free_text_can_be_cancelled_or_rejected(chat):
     reply = await chat.sent("coffee")
-    calls = await chat.press("no", on=reply)
+    calls = await chat.press(buttons(reply)[1], on=reply)
     assert "Nothing was saved" in next(c for c in calls if isinstance(c, EditMessageText)).text
     assert await count(Entry) == 0
     assert "understand" in (await chat.sent("what a day")).text
@@ -261,3 +262,27 @@ def test_user_text_is_escaped(db):
     defaults.install()
     assert "&lt;b&gt;" in replies.log("coffee <b>x</b>").text
     assert "&lt;script&gt;" in replies.preview("<script> blah").text
+
+
+async def test_sentences_go_to_claude_and_still_need_confirming(chat, settings, monkeypatch):
+    from parsing import llm
+    from parsing.tests.fakes import FakeClaude, item
+
+    fake = FakeClaude([item("tracker", tracker="coffee", value=2), item("sleep", bedtime="23:30", wake_time="07:10")],
+                      unparsed="ugh")
+    settings.ANTHROPIC_API_KEY = "test-key"
+    monkeypatch.setattr(llm.anthropic, "Anthropic", lambda **kwargs: fake)
+
+    reply = await chat.sent("two coffees already, slept half eleven to ten past seven, ugh")
+    assert reply.text.startswith("Save this?\n+ Coffee +2\n+ Slept 23:30 → 07:10 (7h 40m)")
+    assert "Not logged: “ugh”" in reply.text
+    assert await count(Entry) == 0
+
+    calls = await chat.press(buttons(reply)[0], on=reply)
+    assert next(c for c in calls if isinstance(c, EditMessageText)).text.startswith("✓ Coffee +2")
+    assert len(fake.requests) == 1  # confirming does not ask Claude again
+    assert await count(Entry) == 1 and await count(SleepSession) == 1
+
+    calls = await chat.press(buttons(reply)[0], on=reply)  # pressing Save twice
+    assert "expired" in next(c for c in calls if isinstance(c, EditMessageText)).text
+    assert await count(Entry) == 1

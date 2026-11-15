@@ -193,3 +193,56 @@ def test_csv_export_matches_filters(client, seeded):
     coffee = client.get("/export/entry.csv?range=30d&tracker=coffee").content.decode().strip().splitlines()
     assert len(coffee) > 5 and all(",coffee," in line for line in coffee[1:])
     assert client.get("/export/nope.csv").status_code == 404
+
+
+# --- palette with the Claude tier ------------------------------------------------
+
+
+@pytest.fixture
+def claude(settings, monkeypatch):
+    from parsing import llm
+    from parsing.tests.fakes import FakeClaude, item
+
+    fake = FakeClaude([item("tracker", tracker="coffee", value=2), item("expense", amount=14.5, category="eating-out")],
+                      unparsed="what a week")
+    settings.ANTHROPIC_API_KEY = "test-key"
+    monkeypatch.setattr(llm.anthropic, "Anthropic", lambda **kwargs: fake)
+    return fake
+
+
+def test_palette_asks_claude_only_on_enter_and_saves_on_the_second_enter(client, claude):
+    from parsing.models import Draft
+
+    text = "had two coffees and bought lunch for 14.50, what a week"
+    typing = client.post("/palette/parse/", {"text": text}).content.decode()
+    assert "let Claude interpret" in typing and claude.requests == []  # no call per keystroke
+
+    first = client.post("/palette/confirm/", {"text": text})
+    html = first.content.decode()
+    assert first["HX-Retarget"] == "#palette-preview" and "HX-Trigger" not in first
+    assert "Coffee +2" in html and "$14.50 · Eating out" in html and "Interpreted by Claude" in html
+    assert "Not logged: “what a week”" in html
+    assert len(claude.requests) == 1 and not Entry.objects.exists()
+    draft = Draft.objects.get()
+    assert f'name="draft" value="{draft.pk}"' in html
+
+    second = client.post("/palette/confirm/", {"text": text, "draft": draft.pk})
+    ev = events(second)
+    assert "palette-close" in ev and ev["toast"]["message"] == "Coffee +2; $14.50 · Eating out"
+    assert len(claude.requests) == 1  # saved from the draft, not a second interpretation
+    assert Entry.objects.count() == 1 and Expense.objects.count() == 1 and not Draft.objects.exists()
+
+
+def test_palette_reinterprets_if_the_text_changed_after_the_preview(client, claude):
+    from parsing.models import Draft
+
+    client.post("/palette/confirm/", {"text": "had two coffees and lunch"})
+    stale = Draft.objects.get()
+    response = client.post("/palette/confirm/", {"text": "had two coffees and a big lunch", "draft": stale.pk})
+    assert response["HX-Retarget"] == "#palette-preview" and len(claude.requests) == 2
+    assert not Entry.objects.exists()
+
+
+def test_palette_still_uses_the_grammar_first(client, claude):
+    assert "palette-close" in events(client.post("/palette/confirm/", {"text": "coffee"}))
+    assert claude.requests == [] and Entry.objects.count() == 1

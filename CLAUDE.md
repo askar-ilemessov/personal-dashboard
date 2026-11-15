@@ -10,6 +10,8 @@ uv run python manage.py bootstrap        # default trackers, categories, budgets
 uv run python manage.py seed --reset     # 90 days of fake data; --reset wipes all logged data
 uv run python manage.py createsuperuser
 uv run python manage.py runserver
+uv run python manage.py parsecheck "text" # show how the parser reads something (saves nothing)
+uv run python manage.py parsecheck --eval # run sample sentences through the real API (needs a key)
 uv run python manage.py runbot           # Telegram bot + hourly jobs; needs TELEGRAM_* in .env
 docker compose up -d --build             # production stack (db, web, bot, caddy)
 uv run pytest -q
@@ -25,7 +27,8 @@ uv run ruff check .
 - `tracking/metrics.py` — read side: daily series by metric key, streaks, unlogged list.
 - `tracking/defaults.py` — starting trackers/categories/goals (plain data).
 - `tracking/fmt.py` — human-readable values (durations, money), shared by every front end.
-- `parsing/grammar.py` — deterministic quick-log grammar (`parse(text) -> Parsed(intents, errors)`); `parsing/describe.py` turns intents into preview/toast text. The LLM tier is added in phase 4.
+- `parsing/parser.py` — **the shared parser**: `interpret(text)` tries the grammar, then Claude; `save_draft` / `draft_intents` back the confirm step. Web, bot and (later) Shortcuts all call this.
+- `parsing/grammar.py` — tier 1, deterministic. `parsing/llm.py` — tier 2, Claude with a JSON schema built from the active trackers and categories. `parsing/describe.py` turns intents into preview/toast text.
 - `web/` — the UI. `views.py` (pages and actions), `tables.py` (one class per row type drives columns, inline edit form, filters, sort and CSV), `charts.py` (SVG sparkline/heatmap and Chart.js payloads), `static/web/app.js` and `app.css`, `templates/web/`.
 - `bot/` — Telegram bot. `replies.py` holds everything the bot says as plain sync functions returning `Reply(text, buttons)`; `handlers.py` is thin aiogram wiring; `management/commands/runbot.py` runs polling plus hourly housekeeping (`materialize_recurring`).
 - `Dockerfile`, `docker-compose.yml`, `Caddyfile` — production stack. See README.md for deploy steps.
@@ -53,11 +56,20 @@ uv run ruff check .
 - Every page requires login (`LoginRequiredMiddleware`). A local `dev` user exists for development; its password is `DEV_PASSWORD` in `.env`.
 - Dev server for previews: `.claude/launch.json` runs it on port 8765.
 
+## Parser conventions
+
+- The model (`PARSER_MODEL`, default `claude-haiku-5-5`, effort low, structured output) only classifies and extracts. It reports `day_offset` and clock times; `llm.to_intents` and `grammar.sleep_intent` compute every date and timestamp, with the same rules as the grammar.
+- The schema enums are the active tracker and category slugs, so the model cannot name something that does not exist and new trackers need no code or prompt change.
+- Model output is validated by `logbook.check` like any other input. API failures, refusals and unreadable answers fall back to the grammar's error.
+- A preview is stored as a `Draft`; confirming rebuilds intents from the stored items. Never call the model a second time for the same message.
+- The web palette calls Claude only on Enter, never while typing. Commands and buttons never use Claude.
+- Tests use `parsing/tests/fakes.FakeClaude`; the root conftest blanks `ANTHROPIC_API_KEY` so no test can reach the API. After changing the prompt or model, run `parsecheck --eval`.
+
 ## Bot conventions
 
-- Commands and buttons log immediately and reply with an Undo button. Free text gets a "Save this?" preview first; confirming re-parses the message being replied to, so no pending state is stored.
+- Commands and buttons log immediately and reply with an Undo button. Free text goes through `parser.interpret` and gets a "Save this?" preview backed by a `Draft`.
 - Every command is turned into grammar text (`/drink 2` -> `alcohol 2`) and goes through `parsing.grammar`; unknown commands are passed through, so a new tracker is a command with no code.
-- Callback data: `q:<grammar text>`, `undo:<op id>`, `habit:<slug>`, `ok`, `no`, `habits`, `today`, `menu` (64-byte limit).
+- Callback data: `q:<grammar text>`, `undo:<op id>`, `habit:<slug>`, `ok:<draft id>`, `no:<draft id>`, `habits`, `today`, `menu` (64-byte limit).
 - Only `TELEGRAM_USER_ID` is served; other updates are dropped silently by the `OwnerOnly` middleware.
 - Messages use HTML parse mode: escape anything that came from the user or the database.
 - Bot tests feed real `Update` objects through the dispatcher with a fake session (`bot/tests/test_bot.py`); no token or network.
@@ -71,7 +83,7 @@ uv run ruff check .
 ## Decisions
 
 - Hybrid model: generic `Tracker`/`Entry` for configurable things; typed tables for expenses, sleep and workouts.
-- Parser will be two-tier: deterministic grammar first, Claude (Haiku 5.5) as fallback; Sonnet 5.5 for reviews and Ask my data.
+- Parser is two-tier: deterministic grammar first, Claude (Haiku 5.5) as fallback; Sonnet 5.5 is planned for reviews and Ask my data.
 - Bot uses long polling and hosts the scheduler (reminders, weekly review, `materialize_recurring`).
 - Deployment: VPS, Docker Compose, Caddy. A minimal deploy happens at the end of phase 3 so real data accumulates before insights.
 - No Node build: HTMX, Alpine and Chart.js vendored; plain CSS with custom properties; server-rendered SVG sparklines and heatmap.
@@ -87,6 +99,6 @@ Tests are required for the logging service, the parser and the stats engine. Tes
 - [x] Phase 1: data model, admin, seed, logging service, tests
 - [x] Phase 2: web app (Today, day view/backfill, detail pages, tables with inline edit and CSV, habits heatmap, trends, command palette on the deterministic grammar)
 - [x] Phase 3: Telegram bot (commands, buttons, /today, /week, undo) + Docker stack. Not yet run against real Telegram or deployed to a server.
-- [ ] Phase 4: natural-language parser
+- [x] Phase 4: natural-language parser (Claude tier, drafts, palette and bot wiring). Tested with a fake client only; not yet run against the real API.
 - [ ] Phase 5: insights
 - [ ] Phase 6: goals/budgets UI, reminders, Shortcuts, backups, deploy hardening

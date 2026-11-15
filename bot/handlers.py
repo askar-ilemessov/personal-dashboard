@@ -91,6 +91,7 @@ def build_router() -> Router:
 
     @router.message(F.text)
     async def free_text(message: Message):
+        await message.bot.send_chat_action(message.chat.id, "typing")  # Claude may take a second
         await _send(message, await _call(replies.preview, message.text), quote=True)
 
     @router.callback_query(F.data.startswith("q:"))
@@ -111,20 +112,17 @@ def build_router() -> Router:
         await callback.answer()
         await callback.message.edit_text(reply.text, reply_markup=_markup(reply))
 
-    @router.callback_query(F.data == "ok")
+    @router.callback_query(F.data.startswith("ok:"))
     async def confirm(callback: CallbackQuery):
-        original = callback.message.reply_to_message
-        if original is None or not original.text:
-            await callback.answer("I can't see the original message any more. Send it again.", show_alert=True)
-            return
-        reply = await _call(replies.log, original.text)
+        reply = await _call(replies.confirm, int(callback.data.split(":", 1)[1]))
         await callback.answer()
         await callback.message.edit_text(reply.text, reply_markup=_markup(reply))
 
-    @router.callback_query(F.data == "no")
+    @router.callback_query(F.data.startswith("no:"))
     async def cancel(callback: CallbackQuery):
+        reply = await _call(replies.cancel, int(callback.data.split(":", 1)[1]))
         await callback.answer()
-        await callback.message.edit_text("Cancelled. Nothing was saved.", reply_markup=None)
+        await callback.message.edit_text(reply.text, reply_markup=None)
 
     @router.callback_query(F.data.in_({"habits", "today", "menu"}))
     async def shortcut(callback: CallbackQuery):

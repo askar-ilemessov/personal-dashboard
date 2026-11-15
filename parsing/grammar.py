@@ -266,17 +266,6 @@ class _Parser:
 
     # -- sleep --
 
-    def _recent(self, t: time) -> datetime:
-        """Most recent time the clock showed `t` (with a little slack for
-        typing "woke 7:10" at 7:05)."""
-        moment = datetime.combine(self.now.date(), t, tzinfo=self.settings.tz)
-        if moment > self.now + timedelta(minutes=30):
-            moment -= timedelta(days=1)
-        return moment
-
-    def _on_day(self, t: time, offset: int = 0) -> datetime:
-        return datetime.combine(self.day + timedelta(days=offset), t, tzinfo=self.settings.tz)
-
     def _clock(self, tokens: list[str]) -> tuple[time | None, list[str]]:
         tokens = [x for x in tokens if x.lower() not in ("at", "up", "to", "until", "from")]
         for k in (2, 1):  # "7 am"
@@ -288,11 +277,9 @@ class _Parser:
         clock, extra = self._clock(rest)
         if extra:
             raise _Unparsed(f"Couldn't read “{' '.join(rest)}” as a time. Try “woke 7:10”.")
-        if clock is None:
-            if self.day:
-                raise _Unparsed("Add a time when backfilling, e.g. “yesterday woke 7:10”.")
-            return SleepLog(wake_time=self.now)
-        return SleepLog(wake_time=self._on_day(clock) if self.day else self._recent(clock))
+        if clock is None and self.day:
+            raise _Unparsed("Add a time when backfilling, e.g. “yesterday woke 7:10”.")
+        return sleep_intent(None, clock or "now", self.day, self.now, self.settings)
 
     def _sleep(self, rest: list[str]) -> SleepLog:
         joined = " ".join(rest).lower()
@@ -300,22 +287,56 @@ class _Parser:
         bed, extra = self._clock(parts[0].split())
         if extra or (rest and bed is None):
             raise _Unparsed(f"Couldn't read “{' '.join(rest)}”. Try “slept 23:30” or “slept 23:30-7:10”.")
+        wake = None
         if len(parts) == 2:
             wake, extra = self._clock(parts[1].split())
             if wake is None or extra:
                 raise _Unparsed(f"Couldn't read “{parts[1]}” as a wake time.")
-            wake_at = self._on_day(wake) if self.day else self._recent(wake)
-            bed_at = datetime.combine(wake_at.date(), bed, tzinfo=self.settings.tz)
-            if bed_at >= wake_at:
-                bed_at -= timedelta(days=1)
-            return SleepLog(bedtime=bed_at, wake_time=wake_at)
-        if bed is None:
-            if self.day:
-                raise _Unparsed("Add a time when backfilling, e.g. “yesterday slept 23:30”.")
-            return SleepLog(bedtime=self.now)
-        if self.day:  # evening times are the night before the wake day
-            return SleepLog(bedtime=self._on_day(bed, -1 if bed.hour >= 15 else 0), day=self.day)
-        return SleepLog(bedtime=self._recent(bed))
+        if bed is None and self.day:
+            raise _Unparsed("Add a time when backfilling, e.g. “yesterday slept 23:30”.")
+        return sleep_intent(bed or "now", wake, self.day, self.now, self.settings)
+
+
+def sleep_intent(bed, wake, day: date | None, now: datetime, settings: AppSettings) -> SleepLog:
+    """Turn clock times into a SleepLog. `bed` and `wake` are a time, the
+    string "now", or None. Shared by the grammar and the LLM tier so that
+    dates are always worked out here, never by the model.
+
+    Without a day, a time means the most recent moment the clock showed it.
+    With a day (backfill), the wake time is on that day and an evening
+    bedtime is the night before."""
+    tz = settings.tz
+    now = now.astimezone(tz)
+
+    def recent(t: time) -> datetime:
+        moment = datetime.combine(now.date(), t, tzinfo=tz)
+        if moment > now + timedelta(minutes=30):  # slack for typing "woke 7:10" at 7:05
+            moment -= timedelta(days=1)
+        return moment
+
+    def on_day(t: time, offset: int = 0) -> datetime:
+        return datetime.combine(day + timedelta(days=offset), t, tzinfo=tz)
+
+    def moment(t, offset=0):
+        if t == "now":
+            return now
+        return on_day(t, offset) if day else recent(t)
+
+    if bed and wake:
+        wake_at = moment(wake)
+        if bed == "now":
+            return SleepLog(bedtime=now, wake_time=wake_at)
+        bed_at = datetime.combine(wake_at.date(), bed, tzinfo=tz)
+        if bed_at >= wake_at:
+            bed_at -= timedelta(days=1)
+        return SleepLog(bedtime=bed_at, wake_time=wake_at)
+    if wake:
+        return SleepLog(wake_time=moment(wake))
+    if bed:
+        if day and bed != "now":  # evening times are the night before the wake day
+            return SleepLog(bedtime=on_day(bed, -1 if bed.hour >= 15 else 0), day=day)
+        return SleepLog(bedtime=moment(bed))
+    raise ValueError("sleep needs a bedtime or a wake time")
 
 
 def parse(text: str, now: datetime | None = None) -> Parsed:
