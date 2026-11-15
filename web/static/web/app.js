@@ -14,6 +14,10 @@ function fmtValue(kind, v, short) {
     return "$" + v.toLocaleString("en-CA", { minimumFractionDigits: short ? 0 : 2, maximumFractionDigits: short ? 0 : 2 });
   }
   if (kind === "percent") return Math.round(v * 100) + "%";
+  if (kind === "clock" || kind === "bedtime") {  // minutes after midnight, or after noon for bedtimes
+    const total = Math.round(v) + (kind === "bedtime" ? 720 : 0);
+    return String(Math.floor(total / 60) % 24).padStart(2, "0") + ":" + String(((total % 60) + 60) % 60).padStart(2, "0");
+  }
   return String(Math.round(v * 100) / 100);
 }
 
@@ -50,6 +54,7 @@ function buildChart(canvas) {
   const c = JSON.parse(canvas.dataset.chart);
   const accent = cssVar("--accent"), previous = cssVar("--series-previous");
   const text2 = cssVar("--text-2"), border = cssVar("--border"), surface = cssVar("--surface");
+  if (c.type === "scatter") return buildScatter(canvas, c, { accent, text2, border, surface });
   const isLine = c.type === "line";
 
   // A logged day between two unlogged ones would vanish on a line with no
@@ -102,6 +107,36 @@ function buildChart(canvas) {
              ticks: { color: text2, maxTicksLimit: c.compact ? 4 : 8, stepSize: step, font: { size: 11 },
                       callback: (v) => fmtValue(c.fmt, v, true) } },
       },
+    },
+  });
+}
+
+function buildScatter(canvas, c, color) {
+  // Time-based axes get gridlines on whole hours (or half hours for short spans).
+  const step = (kind, key) => {
+    if (!["minutes", "clock", "bedtime"].includes(kind)) return undefined;
+    const values = c.points.map((p) => p[key]);
+    const span = Math.max(...values) - Math.min(...values);
+    return span <= 120 ? 30 : span <= 480 ? 60 : 120;
+  };
+  const axis = (name, kind, key) => ({
+    title: { display: true, text: name, color: color.text2, font: { size: 11 } },
+    grid: { color: color.border }, border: { display: false },
+    ticks: { color: color.text2, maxTicksLimit: 8, stepSize: step(kind, key), font: { size: 11 },
+             callback: (v) => fmtValue(kind, v, true) },
+  });
+  new Chart(canvas, {
+    type: "scatter",
+    data: { datasets: [{ label: c.name, data: c.points, backgroundColor: color.accent, borderColor: color.surface,
+                         borderWidth: 1.5, pointRadius: 4.5, pointHoverRadius: 6 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (item) =>
+          `${c.xname}: ${fmtValue(c.xfmt, item.parsed.x)} · ${c.yname}: ${fmtValue(c.yfmt, item.parsed.y)}` } },
+      },
+      scales: { x: axis(c.xname, c.xfmt, "x"), y: axis(c.yname, c.yfmt, "y") },
     },
   });
 }

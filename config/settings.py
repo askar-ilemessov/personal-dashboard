@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     "parsing",
     "web",
     "bot",
+    "insights",
 ]
 
 MIDDLEWARE = [
@@ -111,3 +112,5 @@ TELEGRAM_USER_ID = int(env("TELEGRAM_USER_ID", default="") or 0)
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 # Free-text parsing falls back to this model when the grammar can't read a message.
 PARSER_MODEL = env("PARSER_MODEL", default="claude-haiku-5-5")
+# Words the weekly review and answers "Ask my data" questions.
+INSIGHTS_MODEL = env("INSIGHTS_MODEL", default="claude-sonnet-5-5")

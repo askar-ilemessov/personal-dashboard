@@ -8,12 +8,15 @@ from datetime import date, timedelta
 from decimal import Decimal
 from urllib.parse import urlencode
 
+from django.conf import settings as django_settings
 from django.core.paginator import Paginator
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
+from insights import ask, facts, review, stats
+from insights.models import WeeklyReview
 from parsing import parser
 from parsing.describe import describe
 from parsing.grammar import parse, parse_duration
@@ -207,7 +210,7 @@ def today(request):
         "nav": "today", "day": day, "cards": cards, "habits": habits, "unlogged": unlogged,
         "sleep_missing": not SleepSession.objects.filter(day=day, wake_time__isnull=False).exists(),
         "goals": [g for g in (metrics.goal_progress(g, day) for g in Goal.objects.filter(is_active=True)) if g],
-        "budgets": metrics.budgets(day),
+        "budgets": metrics.budgets(day), "flags": _flags(day)[:3],
     })
 
 
@@ -415,10 +418,65 @@ def trends(request):
     return render(request, "web/trends.html", {"nav": "trends", "range": rng, "panels": panels})
 
 
-def insights(request):
-    return render(request, "web/stub.html", {
-        "nav": "insights", "title": "Insights",
-        "text": "Weekly reviews, correlations, anomaly flags and Ask my data arrive in phase 5.",
+def _flags(today: date) -> list[dict]:
+    """Anomaly flags with links to where each can be inspected."""
+    out = []
+    for f in facts.anomalies(today):
+        url = reverse("web:day", args=[f["day"].isoformat()])
+        if f["metric"] and f["kind"] in ("sleep", "low", "budget"):
+            url = _metric_url(metrics.get(f["metric"]))
+        out.append(f | {"url": url})
+    return out
+
+
+def insights(request, week=None):
+    s = AppSettings.load()
+    now = days.today(s)
+    if week:
+        shown = get_object_or_404(WeeklyReview, week_start=_parse_day(week))
+    else:
+        shown = WeeklyReview.objects.first()
+    this_week = facts.week_start(now)
+    return render(request, "web/insights.html", {
+        "nav": "insights", "review": shown, "reviews": WeeklyReview.objects.all()[:12],
+        "this_week": this_week, "has_this_week": WeeklyReview.objects.filter(week_start=this_week).exists(),
+        "flags": _flags(now), "llm": bool(django_settings.ANTHROPIC_API_KEY), "today": now,
+    })
+
+
+@require_POST
+def insights_review(request):
+    """Write (or rewrite) the review for the current week."""
+    made = review.generate(force=True)
+    who = "Claude" if made.written_by == "claude" else "the built-in template"
+    return _events(refresh={}, toast={"message": f"Review written by {who}."})
+
+
+@require_POST
+def insights_ask(request):
+    question = request.POST.get("question", "")
+    return render(request, "web/partials/answer.html", {"question": question.strip(), "answer": ask.ask(question)})
+
+
+def correlations(request):
+    s = AppSettings.load()
+    now = days.today(s)
+
+    def card(rel):
+        return {
+            "rel": rel,
+            "chart": {
+                "type": "scatter", "name": f"{rel.x.name} vs {rel.y.name}",
+                "points": [{"x": x, "y": y} for x, y in rel.pairs],
+                "xname": rel.x.name, "yname": rel.y.name + (" (next day)" if rel.lag else ""),
+                "xfmt": rel.x.fmt, "yfmt": rel.y.fmt,
+            } if len(rel.pairs) >= 5 else None,
+        }
+
+    return render(request, "web/correlations.html", {
+        "nav": "insights", "days": facts.HISTORY_DAYS, "min_pairs": stats.MIN_PAIRS,
+        "asked": [card(r) for r in facts.correlations(now)],
+        "others": [card(r) for r in facts.other_relationships(now)],
     })
 
 

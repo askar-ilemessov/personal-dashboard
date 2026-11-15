@@ -32,7 +32,8 @@ uv run ruff check .
 - `web/` — the UI. `views.py` (pages and actions), `tables.py` (one class per row type drives columns, inline edit form, filters, sort and CSV), `charts.py` (SVG sparkline/heatmap and Chart.js payloads), `static/web/app.js` and `app.css`, `templates/web/`.
 - `bot/` — Telegram bot. `replies.py` holds everything the bot says as plain sync functions returning `Reply(text, buttons)`; `handlers.py` is thin aiogram wiring; `management/commands/runbot.py` runs polling plus hourly housekeeping (`materialize_recurring`).
 - `Dockerfile`, `docker-compose.yml`, `Caddyfile` — production stack. See README.md for deploy steps.
-- Planned apps: `insights` (5), `api` (6). They are thin adapters with no business logic.
+- `insights/` — `stats.py` (the stats engine: pure functions, no DB or LLM), `facts.py` (correlations, anomaly flags, weekly facts, all pre-formatted), `review.py` (weekly review: Claude or template writer, number check, Sunday schedule), `ask.py` (Ask my data: fixed read-only query tools and the tool loop).
+- Planned app: `api` (6). They are thin adapters with no business logic.
 
 ## Rules
 
@@ -64,6 +65,17 @@ uv run ruff check .
 - A preview is stored as a `Draft`; confirming rebuilds intents from the stored items. Never call the model a second time for the same message.
 - The web palette calls Claude only on Enter, never while typing. Commands and buttons never use Claude.
 - Tests use `parsing/tests/fakes.FakeClaude`; the root conftest blanks `ANTHROPIC_API_KEY` so no test can reach the API. After changing the prompt or model, run `parsecheck --eval`.
+
+## Insights conventions
+
+- **Numbers come from Python only.** `stats.py` computes; `facts.py` formats; language models word. Give a model pre-formatted strings ("7h 08m", "13%"), never raw values to convert.
+- Claude's review text is rejected if it contains any number that is not in the facts (`review.unsupported_numbers`): one retry, then the deterministic template. The review therefore works with no API key.
+- Ask my data exposes only the functions in `ask.FUNCTIONS` (strict schemas, date ranges capped, row limits). No SQL, no ORM access, nothing that writes. Numbers in an answer that no query returned are shown to the user as unverified.
+- Correlations use Spearman on days where both metrics are logged, need at least 14 such days, and are called reliable only when moderate or stronger and p < 0.05. Lag 1 pairs a day with the next day; sleep belongs to the wake day, so "that night's sleep" is lag 1. Always worded as a tendency, never a cause.
+- Anomaly detection uses median/MAD (robust z ≥ 3.5) against 90 days and reports only the last 14. Spending spikes ignore recurring bills.
+- Unlogged days are excluded everywhere, never treated as zero. Spending and exercise are event logs: an empty day is a real zero, and weekly facts report `active_days` for them.
+- Models: `INSIGHTS_MODEL` (default `claude-sonnet-5-5`) for the review and Ask my data. Both read content blocks by type and pass the model's turn back unchanged in the tool loop.
+- The weekly review covers Monday to Sunday and is sent on Telegram on Sunday at `AppSettings.weekly_review_time` (default 18:00) by the bot's housekeeping loop, once per week.
 
 ## Bot conventions
 
@@ -100,5 +112,5 @@ Tests are required for the logging service, the parser and the stats engine. Tes
 - [x] Phase 2: web app (Today, day view/backfill, detail pages, tables with inline edit and CSV, habits heatmap, trends, command palette on the deterministic grammar)
 - [x] Phase 3: Telegram bot (commands, buttons, /today, /week, undo) + Docker stack. Not yet run against real Telegram or deployed to a server.
 - [x] Phase 4: natural-language parser (Claude tier, drafts, palette and bot wiring). Tested with a fake client only; not yet run against the real API.
-- [ ] Phase 5: insights
+- [x] Phase 5: insights (stats engine, correlations, anomaly flags, weekly review with Sunday delivery, Ask my data). Claude wording and Ask my data are tested with fake clients only.
 - [ ] Phase 6: goals/budgets UI, reminders, Shortcuts, backups, deploy hardening

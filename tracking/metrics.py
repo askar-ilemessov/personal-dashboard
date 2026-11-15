@@ -20,7 +20,7 @@ from decimal import Decimal
 from django.db.models import Count, Min, Sum
 
 from . import days
-from .models import Budget, Entry, Expense, SleepSession, Tracker, Workout
+from .models import AppSettings, Budget, Entry, Expense, SleepSession, Tracker, Workout
 
 Series = dict[date, Decimal | None]
 
@@ -48,6 +48,19 @@ def sleep_series(start: date, end: date) -> Series:
     return out
 
 
+def _clock_series(start: date, end: date, field: str, anchor_hour: int) -> Series:
+    """Time of day as minutes after `anchor_hour`, by wake day. Bedtimes are
+    measured from noon so that 23:30 and 00:30 are an hour apart, not 23."""
+    tz = AppSettings.load().tz
+    out = _empty(start, end)
+    sessions = SleepSession.objects.filter(day__range=(start, end), **{f"{field}__isnull": False})
+    for s in sessions.order_by("day", "id"):
+        local = getattr(s, field).astimezone(tz)
+        if out[s.day] is None:  # the first (main) sleep of the day
+            out[s.day] = Decimal(((local.hour - anchor_hour) % 24) * 60 + local.minute)
+    return out
+
+
 def _grouped(queryset, aggregate, start, end) -> Series:
     out = _empty(start, end, Decimal(0))
     for row in queryset.filter(day__range=(start, end)).values("day").annotate(v=aggregate):
@@ -62,6 +75,12 @@ def series(metric: str, start: date, end: date) -> Series:
         return sleep_series(start, end)
     if metric == "expenses.total":
         return _grouped(Expense.objects, Sum("amount_base"), start, end)
+    if metric == "expenses.discretionary":
+        return _grouped(Expense.objects.filter(recurring__isnull=True), Sum("amount_base"), start, end)
+    if metric == "sleep.bedtime":
+        return _clock_series(start, end, "bedtime", 12)
+    if metric == "sleep.wake":
+        return _clock_series(start, end, "wake_time", 0)
     if metric == "exercise.minutes":
         return _grouped(Workout.objects, Sum("duration_min"), start, end)
     if metric == "exercise.sessions":
@@ -151,6 +170,11 @@ _FIXED = {
     "expenses.total": Metric("expenses.total", "Spending", "expenses", "money", agg="sum"),
     "exercise.minutes": Metric("exercise.minutes", "Exercise", "exercise", "minutes", agg="sum"),
     "exercise.sessions": Metric("exercise.sessions", "Workouts", "exercise", "count", agg="sum"),
+    # Not shown as cards; used by insights.
+    "expenses.discretionary": Metric("expenses.discretionary", "Spending without recurring bills", "expenses",
+                                     "money", agg="sum"),
+    "sleep.bedtime": Metric("sleep.bedtime", "Bedtime", "sleep", "bedtime"),
+    "sleep.wake": Metric("sleep.wake", "Wake-up time", "sleep", "clock"),
 }
 _TRACKER_FMT = {"habit": "habit", "counter": "count", "duration": "minutes", "scale": "count"}
 

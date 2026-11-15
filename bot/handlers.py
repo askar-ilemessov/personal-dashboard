@@ -21,7 +21,7 @@ COMMANDS = [
     ("slept", "Going to bed (or /slept 23:30)"), ("woke", "Woke up (or /woke 7:10)"),
     ("screen", "Screen time: /screen 3h20"), ("mood", "Mood 1–5"), ("energy", "Energy 1–5"),
     ("habits", "Check off habits"), ("today", "Today so far"), ("week", "Last 7 days"),
-    ("undo", "Undo the last entry"), ("menu", "One-tap buttons"), ("help", "What I understand"),
+    ("review", "This week's review"), ("ask", "Ask about your data"), ("undo", "Undo the last entry"), ("menu", "One-tap buttons"), ("help", "What I understand"),
 ]
 
 
@@ -79,6 +79,16 @@ def build_router() -> Router:
     @router.message(Command("habits"))
     async def habits(message: Message):
         await _send(message, await _call(replies.habits))
+
+    @router.message(Command("review"))
+    async def review(message: Message):
+        await message.bot.send_chat_action(message.chat.id, "typing")
+        await _send(message, await _call(replies.review))
+
+    @router.message(Command("ask"))
+    async def ask(message: Message, command: CommandObject):
+        await message.bot.send_chat_action(message.chat.id, "typing")
+        await _send(message, await _call(replies.ask, command.args or ""))
 
     @router.message(Command("undo"))
     async def undo(message: Message):

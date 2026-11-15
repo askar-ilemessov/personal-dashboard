@@ -286,3 +286,26 @@ async def test_sentences_go_to_claude_and_still_need_confirming(chat, settings, 
     calls = await chat.press(buttons(reply)[0], on=reply)  # pressing Save twice
     assert "expired" in next(c for c in calls if isinstance(c, EditMessageText)).text
     assert await count(Entry) == 1
+
+
+async def test_review_and_ask_commands(chat):
+    await chat.say("/coffee 2")
+    text = (await chat.sent("/review")).text
+    assert text.startswith("<b>Weekly review · ") and "<b>Try next week:</b>" in text and "• " in text
+    assert "needs a Claude API key" in (await chat.sent("/ask how much coffee?")).text
+    assert "/ask how did I sleep" in (await chat.sent("/ask")).text
+
+
+def test_sunday_review_is_sent_once(db, monkeypatch):
+    from bot.management.commands import runbot
+    from insights import review
+    from insights.models import WeeklyReview
+
+    defaults.install()
+    monday = review.facts_module.week_start(days.today())
+    monkeypatch.setattr(review, "due", lambda now=None: None)
+    assert runbot.send_weekly_review_if_due() is None and not WeeklyReview.objects.exists()
+
+    monkeypatch.setattr(review, "due", lambda now=None: monday)
+    assert runbot.send_weekly_review_if_due().startswith("<b>Weekly review")
+    assert WeeklyReview.objects.get().sent_at is not None

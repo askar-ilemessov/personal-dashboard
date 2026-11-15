@@ -1,0 +1,24 @@
+{% extends "web/base.html" %}
+{% load web_tags %}
+{% block title %}Correlations{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Correlations</h1>
+    <p class="sub">Last {{ days }} days · rank correlation (Spearman) on days where both were logged · at least {{ min_pairs }} days needed</p>
+  </div>
+  <div class="actions"><a class="btn" href="{% url 'web:insights' %}">‹ Insights</a></div>
+</header>
+<p class="hint" style="margin: 0 0 1rem">These are tendencies in your own history. They do not show that one thing causes the other, and a few will be coincidence.</p>
+
+<section class="rel-grid">
+  {% for c in asked %}{% include "web/partials/relationship.html" %}{% endfor %}
+</section>
+
+{% if others %}
+<h2 style="margin-top: 1.6rem">Other links found on the same day</h2>
+<section class="rel-grid">
+  {% for c in others %}{% include "web/partials/relationship.html" %}{% endfor %}
+</section>
+{% endif %}
+{% endblock %}

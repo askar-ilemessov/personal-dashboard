@@ -1,0 +1,6 @@
+{% load web_tags %}<div class="panel rel">
+  <h3>{{ c.rel.x.name }} → {{ c.rel.y.name }}{% if c.rel.lag %} <span class="muted">next day</span>{% endif %}</h3>
+  <p>{{ c.rel.sentence }}</p>
+  <p class="muted">{{ c.rel.detail }}</p>
+  {% if c.chart %}<div class="chart scatter"><canvas data-chart="{{ c.chart|tojson }}" role="img" aria-label="Scatter plot of {{ c.rel.x.name }} against {{ c.rel.y.name }}, one dot per day"></canvas></div>{% endif %}
+</div>

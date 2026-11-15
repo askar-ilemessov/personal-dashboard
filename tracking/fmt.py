@@ -36,6 +36,9 @@ def value(fmt: str, v) -> str:
         return "—"
     if fmt == "minutes":
         return minutes(v)
+    if fmt in ("clock", "bedtime"):  # minutes after midnight, or after noon for bedtimes
+        total = round(float(v)) + (720 if fmt == "bedtime" else 0)
+        return f"{total // 60 % 24:02d}:{total % 60:02d}"
     if fmt == "money":
         return money(v)
     if fmt == "habit":

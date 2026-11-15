@@ -41,6 +41,8 @@ class AppSettings(models.Model):
     default_currency = models.CharField(max_length=3, default="CAD")
     reminder_time = models.TimeField(default=time(21, 0))
     reminder_enabled = models.BooleanField(default=True)
+    weekly_review_enabled = models.BooleanField(default=True, help_text="Send the weekly review on Telegram")
+    weekly_review_time = models.TimeField(default=time(18, 0), help_text="Sunday, local time")
 
     class Meta:
         verbose_name = verbose_name_plural = "Settings"

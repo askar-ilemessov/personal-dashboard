@@ -1,0 +1,14 @@
+<div class="answer">
+  {% if answer.error %}
+    <p class="form-error" role="alert">{{ answer.error }}</p>
+  {% else %}
+    <p>{{ answer.text }}</p>
+    {% if answer.unverified %}<p class="hint warn">Check these figures, no query returned them: {{ answer.unverified|join:", " }}</p>{% endif %}
+  {% endif %}
+  {% if answer.steps %}
+  <details>
+    <summary class="muted">How this was looked up ({{ answer.steps|length }} quer{{ answer.steps|length|pluralize:"y,ies" }})</summary>
+    <ol class="steps">{% for s in answer.steps %}<li>{{ s.tool }} <code>{{ s.input }}</code>{% if not s.ok %} (rejected){% endif %}</li>{% endfor %}</ol>
+  </details>
+  {% endif %}
+</div>

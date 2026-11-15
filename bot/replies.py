@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from html import escape
 
+from insights import ask as ask_module
+from insights import review as review_module
 from parsing import parser
 from parsing.describe import describe
 from parsing.grammar import parse
@@ -32,6 +34,8 @@ HELP = """<b>Quick commands</b>
 /mood 4 · /energy 3
 /habits — check off habits
 /today · /week — summaries
+/review — this week's review
+/ask how did I sleep this month? — ask about your data
 /undo — undo the last thing logged here
 /menu — one-tap buttons
 
@@ -261,3 +265,25 @@ def week() -> Reply:
                 text += f" ({'▲' if change > 0 else '▼'}{abs(change) * 100:.0f}% vs prior week)"
         lines.append(text)
     return Reply("\n".join(lines))
+
+
+def review(week_start=None) -> Reply:
+    """The weekly review (written now if it doesn't exist yet)."""
+    r = review_module.generate(week_start)
+    label = r.facts["period"]["label"]
+    lines = [f"<b>Weekly review · {escape(label)}</b>", "", escape(r.summary), ""]
+    lines += [f"• {escape(o)}" for o in r.observations]
+    lines += ["", f"<b>Try next week:</b> {escape(r.suggestion)}"]
+    return Reply("\n".join(lines))
+
+
+def ask(question: str) -> Reply:
+    if not question.strip():
+        return Reply("Ask something like <code>/ask how did I sleep this month?</code>")
+    answer = ask_module.ask(question)
+    if answer.error:
+        return Reply("⚠️ " + escape(answer.error))
+    text = escape(answer.text)
+    if answer.unverified:
+        text += "\n\n<i>Check these figures, no query returned them: " + escape(", ".join(answer.unverified)) + "</i>"
+    return Reply(text)

@@ -1,0 +1,57 @@
+{% extends "web/base.html" %}
+{% block title %}Insights{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><h1>Insights</h1><p class="sub">Every figure here is computed from your data; wording only is done by Claude.</p></div>
+  <div class="actions"><a class="btn" href="{% url 'web:correlations' %}">Correlations</a></div>
+</header>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Ask my data</h2>
+    <span class="htmx-indicator" id="ask-wait">Looking it up…</span>
+  </div>
+  <form class="ask-form" hx-post="{% url 'web:insights_ask' %}" hx-target="#answer" hx-swap="innerHTML" hx-indicator="#ask-wait">
+    <input name="question" placeholder="How did I sleep this month compared with last month?" autocomplete="off" aria-label="Question" required{% if not llm %} disabled{% endif %}>
+    <button class="btn primary"{% if not llm %} disabled{% endif %}>Ask</button>
+  </form>
+  {% if llm %}
+  <p class="ask-examples" x-data>
+    <button type="button" class="chip" @click="const f = $el.closest('section').querySelector('form'); f.question.value = $el.textContent; f.requestSubmit()">Which weekday do I drink the most?</button>
+    <button type="button" class="chip" @click="const f = $el.closest('section').querySelector('form'); f.question.value = $el.textContent; f.requestSubmit()">How many nights under 6 hours in the last 30 days?</button>
+    <button type="button" class="chip" @click="const f = $el.closest('section').querySelector('form'); f.question.value = $el.textContent; f.requestSubmit()">What did I spend on eating out this month?</button>
+  </p>
+  {% else %}
+  <p class="hint">Set <code>ANTHROPIC_API_KEY</code> in <code>.env</code> to ask questions in plain language. Everything else on this page works without it.</p>
+  {% endif %}
+  <div id="answer"></div>
+</section>
+
+<section class="panel review">
+  <div class="panel-head">
+    <h2>Weekly review{% if review %} · {{ review.facts.period.label }}{% endif %}</h2>
+    <form hx-post="{% url 'web:insights_review' %}" hx-swap="none" hx-indicator="#review-wait">
+      <span class="htmx-indicator" id="review-wait">Writing…</span>
+      <button class="btn">{% if has_this_week %}Rewrite this week's review{% else %}Write this week's review{% endif %}</button>
+    </form>
+  </div>
+  {% if review %}
+    <p>{{ review.summary }}</p>
+    <ul>{% for o in review.observations %}<li>{{ o }}</li>{% endfor %}</ul>
+    <p class="suggestion"><strong>Try next week:</strong> {{ review.suggestion }}</p>
+    <p class="review-meta">Written by {% if review.written_by == "claude" %}Claude from computed facts{% else %}the built-in template{% endif %} on {{ review.created_at|date:"M j" }}{% if not review.facts.period.complete %} · covers {{ review.facts.period.days }} of 7 days{% endif %}{% if review.sent_at %} · sent on Telegram{% endif %}</p>
+  {% else %}
+    <p class="muted">No review yet. One is written every Sunday evening and sent on Telegram, or write one now.</p>
+  {% endif %}
+  {% if reviews|length > 1 %}
+  <p class="week-list">{% for r in reviews %}<a class="chip{% if r.pk == review.pk %} on{% endif %}" href="{% url 'web:insights_week' r.week_start.isoformat %}">{{ r.week_start|date:"M j" }}</a>{% endfor %}</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Flags from the last 14 days</h2>
+  {% if flags %}
+  <ul class="flags">{% for f in flags %}<li><a href="{{ f.url }}"><strong>{{ f.title }}</strong></a> <span class="muted">{{ f.detail }}</span></li>{% endfor %}</ul>
+  {% else %}<p class="muted">Nothing unusual.</p>{% endif %}
+</section>
+{% endblock %}

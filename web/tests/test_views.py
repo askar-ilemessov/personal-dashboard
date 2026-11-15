@@ -246,3 +246,54 @@ def test_palette_reinterprets_if_the_text_changed_after_the_preview(client, clau
 def test_palette_still_uses_the_grammar_first(client, claude):
     assert "palette-close" in events(client.post("/palette/confirm/", {"text": "coffee"}))
     assert claude.requests == [] and Entry.objects.count() == 1
+
+
+# --- insights -------------------------------------------------------------------
+
+
+def test_insights_pages(client, seeded):
+    html = client.get("/insights/").content.decode()
+    assert "No review yet" in html and "Flags from the last 14 days" in html
+    assert "ANTHROPIC_API_KEY" in html  # says how to enable Ask my data instead of failing
+
+    ev = events(client.post("/insights/review/"))
+    assert ev["toast"]["message"] == "Review written by the built-in template."
+    html = client.get("/insights/").content.decode()
+    assert "Try next week:" in html and "Written by the built-in template" in html
+
+    from insights.models import WeeklyReview
+
+    week = WeeklyReview.objects.get().week_start
+    assert client.get(f"/insights/week/{week}/").status_code == 200
+    assert client.get("/insights/week/2020-01-06/").status_code == 404
+
+    html = client.get("/insights/correlations/").content.decode()
+    assert "Screen time → Sleep" in html and 'data-chart="{&quot;type&quot;: &quot;scatter&quot;' in html
+
+
+def test_insights_with_no_data(client):
+    assert client.get("/insights/").status_code == 200
+    assert "Not enough data yet" in client.get("/insights/correlations/").content.decode()
+
+
+def test_ask_box(client, settings, monkeypatch):
+    from insights import ask
+    from insights.tests.test_insights import Asker
+
+    assert "needs a Claude API key" in client.post("/insights/ask/", {"question": "streaks?"}).content.decode()
+    settings.ANTHROPIC_API_KEY = "test-key"
+    fake = Asker([("habit_streaks", {})], "Your longest streak is 0 days.")
+    monkeypatch.setattr(ask.anthropic, "Anthropic", lambda **kwargs: fake)
+    html = client.post("/insights/ask/", {"question": "What are my streaks?"}).content.decode()
+    assert "Your longest streak is 0 days." in html and "habit_streaks" in html and "1 query" in html
+
+
+def test_today_shows_flags(client):
+    from datetime import timedelta as td
+
+    today = days.today()
+    for i in range(20, 0, -1):
+        client.post("/log/", {"kind": "expense", "amount": 30 + i % 9, "category": "food", "day": (today - td(days=i)).isoformat()})
+    client.post("/log/", {"kind": "expense", "amount": "900", "category": "shopping", "day": (today - td(days=2)).isoformat()})
+    html = client.get("/").content.decode()
+    assert "Spending spike on" in html
