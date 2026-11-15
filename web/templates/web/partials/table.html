@@ -1,0 +1,22 @@
+<div class="table-wrap" hx-swap="innerHTML show:none">
+  <table class="table">
+    <thead><tr>
+      {% for c in t.columns %}<th class="{{ c.align }}">{% if c.url %}<a href="{{ c.url }}">{{ c.label }}{% if c.active %} <span aria-hidden="true">{% if c.ascending %}▲{% else %}▼{% endif %}</span>{% endif %}</a>{% else %}{{ c.label }}{% endif %}</th>{% endfor %}
+      <th></th>
+    </tr></thead>
+    <tbody>
+      {% for row in t.rows %}{% include "web/partials/row.html" %}{% empty %}
+      <tr><td class="empty" colspan="{{ t.columns|length|add:1 }}">Nothing logged{% if not t.mini %} in this range{% endif %}.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if not t.mini %}
+  <div class="table-foot">
+    <span class="muted">{{ t.total }} row{{ t.total|pluralize }}{% if t.page.paginator.num_pages > 1 %} · page {{ t.page.number }} of {{ t.page.paginator.num_pages }}{% endif %}</span>
+    <span>
+      {% if t.prev_url %}<a class="btn" href="{{ t.prev_url }}">Previous</a>{% endif %}
+      {% if t.next_url %}<a class="btn" href="{{ t.next_url }}">Next</a>{% endif %}
+    </span>
+  </div>
+  {% endif %}
+</div>

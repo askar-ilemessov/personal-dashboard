@@ -20,6 +20,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "tracking",
+    "parsing",
+    "web",
 ]
 
 MIDDLEWARE = [
@@ -28,6 +30,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.auth.middleware.LoginRequiredMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -72,6 +75,10 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 APP_TIMEZONE = env("APP_TIMEZONE", default="America/Toronto")
+
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "web:today"
+LOGOUT_REDIRECT_URL = "login"
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"

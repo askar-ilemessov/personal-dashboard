@@ -1,0 +1,18 @@
+{% extends "web/base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<header class="page-head"><div><h1>Settings</h1><p class="sub">Configuration is edited in the admin for now; a dedicated screen comes in phase 6.</p></div></header>
+<section class="panel">
+  <h2>Current</h2>
+  <dl class="kv">
+    <dt>Timezone</dt><dd>{{ settings.timezone }}</dd>
+    <dt>Day starts at</dt><dd>{{ settings.day_start|time:"H:i" }}</dd>
+    <dt>Default currency</dt><dd>{{ settings.default_currency }}</dd>
+    <dt>Evening reminder</dt><dd>{% if settings.reminder_enabled %}{{ settings.reminder_time|time:"H:i" }}{% else %}off{% endif %}</dd>
+  </dl>
+</section>
+<section class="panel">
+  <h2>Edit</h2>
+  <ul class="link-list" hx-boost="false">{% for label, url in links %}<li><a href="{{ url }}">{{ label }}</a></li>{% endfor %}</ul>
+</section>
+{% endblock %}

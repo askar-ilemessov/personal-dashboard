@@ -1,0 +1,51 @@
+{% extends "web/base.html" %}
+{% block title %}Today{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><h1>Today</h1><p class="sub">{{ day|date:"l, F j" }}</p></div>
+  <div class="actions">
+    <a class="btn" href="{% url 'web:day' day.isoformat %}">Day view &amp; backfill</a>
+    <button type="button" class="btn primary" @click="$dispatch('palette-open')">Quick log <kbd>⌘K</kbd></button>
+  </div>
+</header>
+
+{% if unlogged or sleep_missing %}
+<section class="panel">
+  <h2>Still unlogged today</h2>
+  <div class="controls">
+    {% if sleep_missing %}
+    <div class="control"><div class="control-label"><a href="{% url 'web:sleep' %}">Sleep</a><span class="muted">not logged</span></div>
+      <div class="control-actions"><a class="chip" href="{% url 'web:day' day.isoformat %}#log">Add times</a></div></div>
+    {% endif %}
+    {% for c in unlogged %}{% include "web/partials/control.html" %}{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="cards">
+  {% for card in cards %}
+  <a class="card" href="{{ card.url }}">
+    <div class="card-top">
+      <span class="card-name">{{ card.metric.name }}</span>
+      {% if card.goal %}<span class="status {% if card.goal_met is None %}muted{% elif card.goal_met %}good{% else %}bad{% endif %}" title="{{ card.goal.name }}">{% if card.goal_met is None %}goal{% elif card.goal_met %}✓ goal{% else %}! goal{% endif %}</span>{% endif %}
+    </div>
+    <div class="card-main">
+      <span class="card-value{% if not card.logged %} unlogged{% endif %}">{% if card.logged %}{{ card.value }}{% else %}Not logged{% endif %}</span>
+      {{ card.spark }}
+    </div>
+    <div class="card-foot">
+      <span>{{ card.week_label }} {{ card.week }}</span>
+      {% include "web/partials/delta.html" with d=card.delta f=card.metric.agg_fmt label="vs prior week" %}
+    </div>
+  </a>
+  {% endfor %}
+</section>
+
+<div class="columns">
+  <section class="panel">
+    <h2><a href="{% url 'web:habits' %}">Habits</a></h2>
+    <div class="controls stacked">{% for c in habits %}{% include "web/partials/control.html" %}{% endfor %}</div>
+  </section>
+  <div>{% include "web/partials/progress.html" %}</div>
+</div>
+{% endblock %}

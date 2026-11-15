@@ -1,8 +1,7 @@
 from datetime import UTC, date, datetime, time
 
+from conftest import local
 from tracking import days
-
-from .conftest import local
 
 
 def test_before_boundary_belongs_to_previous_day(configured):

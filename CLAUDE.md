@@ -22,7 +22,10 @@ uv run ruff check .
 - `tracking/days.py` — the only code that knows about the day boundary and timezone.
 - `tracking/metrics.py` — read side: daily series by metric key, streaks, unlogged list.
 - `tracking/defaults.py` — starting trackers/categories/goals (plain data).
-- Planned apps: `parsing` (phase 4), `insights` (5), `web` (2), `bot` (3), `api` (6). They are thin adapters with no business logic.
+- `tracking/fmt.py` — human-readable values (durations, money), shared by every front end.
+- `parsing/grammar.py` — deterministic quick-log grammar (`parse(text) -> Parsed(intents, errors)`); `parsing/describe.py` turns intents into preview/toast text. The LLM tier is added in phase 4.
+- `web/` — the UI. `views.py` (pages and actions), `tables.py` (one class per row type drives columns, inline edit form, filters, sort and CSV), `charts.py` (SVG sparkline/heatmap and Chart.js payloads), `static/web/app.js` and `app.css`, `templates/web/`.
+- Planned apps: `insights` (5), `bot` (3), `api` (6). They are thin adapters with no business logic.
 
 ## Rules
 
@@ -34,6 +37,17 @@ uv run ruff check .
 6. **Money.** `Decimal` only. `Expense.amount_base` is the amount in the default currency (CAD) using the manual `ExchangeRate` at logging time; there is no FX API.
 7. **LLM boundaries** (phases 4–5). The LLM parses text into intents and writes prose from computed facts. All numbers come from deterministic Python. Ask-my-data exposes fixed query functions only, no SQL.
 8. `LogError` messages are shown to the user verbatim: write them in plain language.
+
+## Web UI conventions
+
+- Pages are swapped by HTMX (`hx-boost`); nothing does a full reload. `<main id="content">` re-fetches itself on the `refresh` event.
+- Write endpoints return an empty 200 with an `HX-Trigger` header: `refresh`, `toast` (`{message, op?, error?}`; `op` enables Undo) and `palette-close`. Validation errors are a toast with `error: true`, never a 4xx.
+- Views read through `tracking.metrics` and write through `tracking.logbook` only.
+- Comparisons with the previous period are hidden when that period starts before any data exists (`metrics.comparable`).
+- Charts: one measure and one y-axis per chart; previous period is a muted dashed line; unlogged days are gaps. Colours come from CSS variables so light/dark stay in sync.
+- The palette and toast are shown with a CSS class, not Alpine `x-show` (which waits for an animation frame and races with focusing the input).
+- Every page requires login (`LoginRequiredMiddleware`). A local `dev` user exists for development; its password is `DEV_PASSWORD` in `.env`.
+- Dev server for previews: `.claude/launch.json` runs it on port 8765.
 
 ## Decisions
 
@@ -47,12 +61,12 @@ uv run ruff check .
 
 ## Testing
 
-Tests are required for the logging service, the parser and the stats engine. Tests live in `tracking/tests/` (pytest-django). Commit after each phase.
+Tests are required for the logging service, the parser and the stats engine. Tests live in `<app>/tests/` (pytest-django); the shared fixture is in the root `conftest.py`. After changing a template, restart the dev server if the change does not show up. Commit after each phase.
 
 ## Status
 
 - [x] Phase 1: data model, admin, seed, logging service, tests
-- [ ] Phase 2: web app
+- [x] Phase 2: web app (Today, day view/backfill, detail pages, tables with inline edit and CSV, habits heatmap, trends, command palette on the deterministic grammar)
 - [ ] Phase 3: Telegram bot + minimal deploy
 - [ ] Phase 4: natural-language parser
 - [ ] Phase 5: insights

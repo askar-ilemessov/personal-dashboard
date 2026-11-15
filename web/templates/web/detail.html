@@ -1,0 +1,79 @@
+{% extends "web/base.html" %}
+{% load web_tags %}
+{% block title %}{{ metric.name }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>{{ metric.name }}</h1>
+    <p class="sub">{{ range.start|date:"M j, Y" }} – {{ range.end|date:"M j, Y" }} {% if has_previous %} · compared with the {{ range.days }} days before{% endif %}</p>
+  </div>
+  {% include "web/partials/range.html" %}
+</header>
+
+<section class="stats">
+  {% for s in stats %}
+  <div class="stat">
+    <span class="stat-label">{{ s.label }}</span>
+    <span class="stat-value">{{ s.value }}</span>
+    {% if forloop.first %}{% include "web/partials/delta.html" with d=s.delta f=metric.agg_fmt %}{% endif %}
+  </div>
+  {% endfor %}
+  {% for s in extra_stats %}
+  <div class="stat"><span class="stat-label">{{ s.label }}</span><span class="stat-value">{{ s.value }}</span></div>
+  {% endfor %}
+  {% if longest is not None %}
+  <div class="stat"><span class="stat-label">Current streak</span><span class="stat-value">{{ streak }} day{{ streak|pluralize }}</span></div>
+  <div class="stat"><span class="stat-label">Longest streak</span><span class="stat-value">{{ longest }} day{{ longest|pluralize }}</span></div>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="chart"><canvas data-chart="{{ chart|tojson }}" role="img" aria-label="{{ metric.name }} over time. The same data is in the table below."></canvas></div>
+</section>
+
+{% if breakdown %}
+<div class="columns">
+  <section class="panel">
+    <h2>By category</h2>
+    <ul class="progress-list">
+      {% for b in breakdown %}
+      <li>
+        <div class="progress-head"><a href="?{{ range.query }}&category={{ b.slug }}">{{ b.name }}</a><span>{{ b.amount }} <span class="muted">{{ b.pct }}</span></span></div>
+        <div class="bar"><span style="width: {{ b.share|pct }}"></span></div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  <div>{% include "web/partials/progress.html" with goals=None %}</div>
+</div>
+{% endif %}
+
+{% if type_counts %}
+<section class="panel">
+  <h2>By type</h2>
+  <p class="type-counts">{% for label, n in type_counts %}<span><strong>{{ n }}</strong> {{ label }}</span>{% endfor %}</p>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Entries</h2>
+    <form method="get" class="filters" hx-swap="innerHTML show:none">
+      {% for k, v in table.keep.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      {% for f in filters %}
+      <select name="{{ f.name }}" onchange="this.form.requestSubmit()" aria-label="{{ f.label }}">
+        <option value="">{{ f.label }}</option>
+        {% for value, label in f.choices %}<option value="{{ value }}"{% if value == f.value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      {% endfor %}
+      {% if metric.kind != "sleep" %}<input type="search" name="q" value="{{ table.q }}" placeholder="Filter notes" aria-label="Filter notes">{% endif %}
+      <a class="btn" href="{{ table.csv_url }}" hx-boost="false">Export CSV</a>
+    </form>
+  </div>
+  {% if control %}<div class="controls">{% include "web/partials/control.html" with c=control %}</div>{% endif %}
+  {% if metric.kind == "expenses" %}{% include "web/partials/forms.html" with show="expense" day_field="" %}{% endif %}
+  {% if metric.kind == "exercise" %}{% include "web/partials/forms.html" with show="workout" day_field="" %}{% endif %}
+  {% if metric.kind == "sleep" %}{% include "web/partials/forms.html" with show="sleep" day_field="" %}{% endif %}
+  {% include "web/partials/table.html" with t=table %}
+</section>
+{% endblock %}

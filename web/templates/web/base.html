@@ -1,0 +1,60 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Today{% endblock %} · Dashboard</title>
+  <script>(function () { try { var t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {} })();</script>
+  <link rel="stylesheet" href="{% static 'web/app.css' %}">
+  <script defer src="{% static 'web/vendor/htmx.min.js' %}"></script>
+  <script defer src="{% static 'web/vendor/chart.umd.min.js' %}"></script>
+  <script defer src="{% static 'web/app.js' %}"></script>
+  <script defer src="{% static 'web/vendor/alpine.min.js' %}"></script>
+</head>
+<body hx-boost="true" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' x-data>
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand" href="{% url 'web:today' %}">Dashboard</a>
+    <nav>
+      <a href="{% url 'web:today' %}" data-key="t" {% if nav == "today" %}class="active"{% endif %}>Today</a>
+      <a href="{% url 'web:trends' %}" data-key="r" {% if nav == "trends" %}class="active"{% endif %}>Trends</a>
+      <a href="{% url 'web:habits' %}" data-key="h" {% if nav == "habits" %}class="active"{% endif %}>Habits</a>
+      <a href="{% url 'web:expenses' %}" data-key="e" {% if nav == "expenses" %}class="active"{% endif %}>Expenses</a>
+      <a href="{% url 'web:sleep' %}" data-key="s" {% if nav == "sleep" %}class="active"{% endif %}>Sleep</a>
+      <a href="{% url 'web:exercise' %}" data-key="x" {% if nav == "exercise" %}class="active"{% endif %}>Exercise</a>
+      <a href="{% url 'web:insights' %}" data-key="i" {% if nav == "insights" %}class="active"{% endif %}>Insights</a>
+      <a href="{% url 'web:settings' %}" data-key="," {% if nav == "settings" %}class="active"{% endif %}>Settings</a>
+    </nav>
+    <div class="sidebar-foot">
+      <button type="button" class="btn block" @click="$dispatch('palette-open')">Quick log <kbd>⌘K</kbd></button>
+      <button type="button" class="btn block quiet" onclick="toggleTheme()">Light / dark</button>
+      <form method="post" action="{% url 'logout' %}" hx-boost="false">{% csrf_token %}
+        <button class="btn block quiet">Sign out</button>
+      </form>
+    </div>
+  </aside>
+  <main id="content" hx-get="{{ request.get_full_path }}" hx-trigger="refresh from:body" hx-select="#content"
+        hx-target="this" hx-swap="outerHTML" hx-disinherit="*">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+<div class="overlay" x-data="palette" :class="{open: open}" @palette-open.window="show()"
+     @palette-close.window="hide()" @keydown.escape.window="hide()" @click.self="hide()">
+  <form class="palette" hx-post="{% url 'web:palette_confirm' %}" hx-swap="none" hx-boost="false">
+    <input name="text" x-ref="input" autocomplete="off" spellcheck="false" aria-label="Quick log"
+           placeholder="coffee, spent 12.5 food, slept 23:30-7:10 …"
+           hx-post="{% url 'web:palette_parse' %}" hx-trigger="input changed delay:120ms, palette-reset"
+           hx-target="#palette-preview" hx-swap="innerHTML">
+    <div id="palette-preview">{% include "web/partials/palette_preview.html" %}</div>
+    <footer><span><kbd>↵</kbd> save</span><span><kbd>esc</kbd> close</span><span><kbd>g</kbd> then <kbd>t</kbd> <kbd>h</kbd> <kbd>e</kbd> <kbd>s</kbd> <kbd>x</kbd> <kbd>r</kbd> jump to a page</span></footer>
+  </form>
+</div>
+
+<div class="toast" x-data="toast" :class="{error: error, open: visible}"
+     @toast.window="show($event.detail)" role="status" aria-live="polite">
+  <span x-text="message"></span>
+  <button type="button" x-show="op" @click="undo()">Undo</button>
+</div>
+</body>
+</html>

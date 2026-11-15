@@ -1,0 +1,12 @@
+<div class="range" hx-swap="innerHTML show:none">
+  <div class="segmented" role="group" aria-label="Date range">
+    {% for key, label, n in range.options %}<a href="?range={{ key }}"{% if range.key == key %} class="on" aria-current="true"{% endif %}>{{ label }}</a>{% endfor %}
+  </div>
+  <form method="get" class="custom-range">
+    <input type="hidden" name="range" value="custom">
+    <input type="date" name="start" value="{{ range.start.isoformat }}" aria-label="From" required>
+    <span class="muted">to</span>
+    <input type="date" name="end" value="{{ range.end.isoformat }}" aria-label="To" required>
+    <button class="btn{% if range.key == 'custom' %} on{% endif %}">Apply</button>
+  </form>
+</div>

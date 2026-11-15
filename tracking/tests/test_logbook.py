@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 
+from conftest import local
 from tracking import logbook, metrics
 from tracking.logbook import (
     DayNoteLog,
@@ -26,8 +27,6 @@ from tracking.models import (
     Tracker,
     Workout,
 )
-
-from .conftest import local
 
 D = date(2026, 11, 14)
 NOON = local(2026, 11, 14)

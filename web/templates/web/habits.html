@@ -1,0 +1,23 @@
+{% extends "web/base.html" %}
+{% block title %}Habits{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><h1>Habits</h1><p class="sub">Last 26 weeks · {{ today|date:"l, F j" }}</p></div>
+  <p class="legend"><span class="swatch heat-done"></span> done <span class="swatch heat-miss"></span> not done <span class="swatch heat-none"></span> not logged</p>
+</header>
+{% for c in habits %}
+<section class="panel habit">
+  <div class="habit-head">
+    {% include "web/partials/control.html" with c=c %}
+    <dl class="habit-stats">
+      <div><dt>Current streak</dt><dd>{{ c.streak }} day{{ c.streak|pluralize }}</dd></div>
+      <div><dt>Longest</dt><dd>{{ c.longest }} day{{ c.longest|pluralize }}</dd></div>
+      <div><dt>Last 30 days</dt><dd>{{ c.done_30 }} done <span class="muted">of {{ c.logged_30 }} logged</span></dd></div>
+    </dl>
+  </div>
+  <div class="heat-scroll">{{ c.heatmap }}</div>
+</section>
+{% empty %}
+<section class="panel"><p class="muted">No habits yet. Add one under Settings → Trackers.</p></section>
+{% endfor %}
+{% endblock %}

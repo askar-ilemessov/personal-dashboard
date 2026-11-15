@@ -379,6 +379,21 @@ def apply(intents, source: str, raw_text: str = "", now: datetime | None = None)
     return _finish(ctx)
 
 
+class _DryRun(Exception):
+    pass
+
+
+def check(intents) -> None:
+    """Validate intents exactly as `apply` would, without saving anything.
+    Raises LogError if they would be rejected."""
+    try:
+        with transaction.atomic():
+            apply(intents, source="web")
+            raise _DryRun
+    except _DryRun:
+        pass
+
+
 _EDITABLE = {
     Entry: {"value", "note", "day", "occurred_at"},
     Expense: {"amount", "currency", "category", "note", "day", "occurred_at"},
@@ -422,6 +437,8 @@ def edit(row, source: str, **fields) -> Operation:
             raise LogError("Wake time must be after bedtime, within 24 hours.")
         if not bed and not wake:
             raise LogError("Sleep needs a bedtime, a wake time, or both.")
+        if fields.get("wake_time") and "day" not in fields:
+            fields["day"] = wake.astimezone(s.tz).date()  # sleep belongs to the wake day
     if isinstance(row, Workout):
         if "type" in fields and fields["type"] not in Workout.Type.values:
             raise LogError(f"Unknown workout type “{fields['type']}”.")

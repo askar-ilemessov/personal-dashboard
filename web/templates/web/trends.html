@@ -1,0 +1,21 @@
+{% extends "web/base.html" %}
+{% load web_tags %}
+{% block title %}Trends{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><h1>Trends</h1><p class="sub">{{ range.start|date:"M j, Y" }} – {{ range.end|date:"M j, Y" }} · every metric on the same dates</p></div>
+  {% include "web/partials/range.html" %}
+</header>
+<section class="trend-grid">
+  {% for p in panels %}
+  <div class="panel trend">
+    <div class="trend-head">
+      <a href="{{ p.url }}">{{ p.metric.name }}</a>
+      <span><strong>{{ p.value }}</strong> <span class="muted">{{ p.label|lower }}</span></span>
+    </div>
+    <div class="chart compact"><canvas data-chart="{{ p.chart|tojson }}" role="img" aria-label="{{ p.metric.name }} over time"></canvas></div>
+    {% include "web/partials/delta.html" with d=p.delta f=p.metric.agg_fmt %}
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

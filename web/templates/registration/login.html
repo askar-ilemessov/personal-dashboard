@@ -1,0 +1,19 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · Dashboard</title>
+  <script>(function () { try { var t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {} })();</script>
+  <link rel="stylesheet" href="{% static 'web/app.css' %}">
+</head>
+<body class="login">
+  <form method="post" class="panel login-box">{% csrf_token %}
+    <h1>Dashboard</h1>
+    {% if form.errors %}<p class="form-error" role="alert">That username and password don't match. Try again.</p>{% endif %}
+    <label>Username <input name="username" autocomplete="username" autofocus required></label>
+    <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="btn primary block">Sign in</button>
+  </form>
+</body>
+</html>

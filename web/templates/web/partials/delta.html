@@ -1,0 +1,1 @@
+{% load web_tags %}{% if d %}<span class="delta" title="Previous period: {{ d.previous|metric_value:f }}">{{ d.arrow }} {{ d.pct }} <span class="muted">{{ label|default:"vs previous period" }}</span></span>{% else %}<span class="delta muted">no earlier data to compare</span>{% endif %}

@@ -13,13 +13,14 @@ means none, so they return 0.
 """
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
-from django.db.models import Count, Sum
+from django.db.models import Count, Min, Sum
 
 from . import days
-from .models import Entry, Expense, SleepSession, Tracker, Workout
+from .models import Budget, Entry, Expense, SleepSession, Tracker, Workout
 
 Series = dict[date, Decimal | None]
 
@@ -115,3 +116,132 @@ def expenses_by_category(start: date, end: date) -> dict[str, Decimal]:
     for row in rows:
         out[row["category__slug"]] = row["v"]
     return dict(out)
+
+
+# --- Metric catalog --------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Metric:
+    key: str
+    name: str
+    kind: str  # habit, counter, duration, scale, sleep, expenses, exercise
+    fmt: str  # how a single day's value is shown (see tracking.fmt.value)
+    unit: str = ""
+    agg: str = "mean"  # how a range is summarised: mean of logged days, or sum
+
+    @property
+    def agg_fmt(self) -> str:
+        return "percent" if self.kind == "habit" else self.fmt
+
+    @property
+    def agg_label(self) -> str:
+        if self.kind == "habit":
+            return "Completion"
+        return "Total" if self.agg == "sum" else "Daily average"
+
+    @property
+    def adds_up(self) -> bool:
+        """Whether a week/month goal compares against a sum rather than a mean."""
+        return self.kind in ("counter", "expenses", "exercise")
+
+
+_FIXED = {
+    "sleep.duration": Metric("sleep.duration", "Sleep", "sleep", "minutes"),
+    "expenses.total": Metric("expenses.total", "Spending", "expenses", "money", agg="sum"),
+    "exercise.minutes": Metric("exercise.minutes", "Exercise", "exercise", "minutes", agg="sum"),
+    "exercise.sessions": Metric("exercise.sessions", "Workouts", "exercise", "count", agg="sum"),
+}
+_TRACKER_FMT = {"habit": "habit", "counter": "count", "duration": "minutes", "scale": "count"}
+
+
+def for_tracker(tracker: Tracker) -> Metric:
+    return Metric(f"tracker:{tracker.slug}", tracker.name, tracker.kind, _TRACKER_FMT[tracker.kind], tracker.unit)
+
+
+def get(key: str) -> Metric:
+    if key in _FIXED:
+        return _FIXED[key]
+    if key.startswith("tracker:"):
+        return for_tracker(Tracker.objects.get(slug=key.split(":", 1)[1]))
+    raise KeyError(f"Unknown metric {key!r}")
+
+
+def catalog(habits: bool = True) -> list[Metric]:
+    """Everything worth a card or a chart, in display order."""
+    trackers = [for_tracker(t) for t in Tracker.objects.filter(is_active=True)]
+    out = [_FIXED["sleep.duration"]]
+    out += [m for m in trackers if m.kind != "habit"]
+    out += [_FIXED["exercise.minutes"], _FIXED["expenses.total"]]
+    if habits:
+        out += [m for m in trackers if m.kind == "habit"]
+    return out
+
+
+def aggregate(metric: Metric, values: Series) -> Decimal | None:
+    """Summarise a range. Unlogged days are left out, never counted as 0."""
+    logged = [v for v in values.values() if v is not None]
+    if not logged:
+        return None
+    total = sum(logged, Decimal(0))
+    return total if metric.agg == "sum" else total / len(logged)
+
+
+# --- Goals and budgets -----------------------------------------------------
+
+
+def period_start(period: str, today: date) -> date:
+    if period == "week":
+        return today - timedelta(days=today.weekday())
+    if period == "month":
+        return today.replace(day=1)
+    return today
+
+
+def goal_progress(goal, today: date) -> dict | None:
+    try:
+        metric = get(goal.metric)
+    except (KeyError, Tracker.DoesNotExist):
+        return None
+    logged = [v for v in series(goal.metric, period_start(goal.period, today), today).values() if v is not None]
+    if not logged:
+        current = None
+    elif goal.period == "day" or metric.adds_up:
+        current = sum(logged, Decimal(0))
+    else:
+        current = sum(logged, Decimal(0)) / len(logged)
+    ratio = None if current is None else float(min(Decimal(1), current / goal.target)) if goal.target else 1.0
+    return {"goal": goal, "metric": metric, "value": current, "met": goal.is_met(current), "ratio": ratio}
+
+
+def budgets(today: date) -> list[dict]:
+    """This month's spend against each category's current budget."""
+    spent = expenses_by_category(today.replace(day=1), today)
+    out, seen = [], set()
+    rows = Budget.objects.filter(effective_from__lte=today).select_related("category")
+    for b in rows.order_by("category__sort_order", "-effective_from"):
+        if b.category_id in seen or not b.category.is_active:
+            continue
+        seen.add(b.category_id)
+        used = spent.get(b.category.slug, Decimal(0))
+        out.append({
+            "category": b.category, "spent": used, "budget": b.monthly_amount,
+            "ratio": float(min(Decimal(1), used / b.monthly_amount)) if b.monthly_amount else 1.0,
+            "over": used > b.monthly_amount,
+        })
+    return out
+
+
+def first_day() -> date | None:
+    """Earliest day with anything logged. Periods before it have no data,
+    which is different from having zeros."""
+    firsts = [m.objects.aggregate(d=Min("day"))["d"] for m in (Entry, Expense, SleepSession, Workout)]
+    return min((d for d in firsts if d), default=None)
+
+
+def comparable(previous: Series, first: date | None) -> Series | None:
+    """The previous period, or None when it starts before any data exists
+    (comparing against a partly empty period would mislead)."""
+    if first is None or not previous or min(previous) < first:
+        return None
+    return previous

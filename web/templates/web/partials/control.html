@@ -1,0 +1,25 @@
+<div class="control">
+  <div class="control-label">
+    <a href="{{ c.url }}">{{ c.tracker.name }}</a>
+    {% if c.display %}<span class="control-value">{{ c.display }}{% if c.tracker.kind == "counter" and c.tracker.unit %} {{ c.tracker.unit }}{% endif %}</span>
+    {% else %}<span class="muted">not logged</span>{% endif %}
+    {% if c.streak %}<span class="streak" title="Current streak (longest {{ c.longest }})">{{ c.streak }}-day streak</span>{% endif %}
+  </div>
+  <form hx-post="{% url 'web:log' %}" hx-swap="none" class="control-actions">
+    <input type="hidden" name="kind" value="tracker">
+    <input type="hidden" name="tracker" value="{{ c.tracker.slug }}">
+    <input type="hidden" name="day" value="{{ c.day }}">
+    {% if c.tracker.kind == "habit" %}
+      <button name="value" value="1" class="chip{% if c.value == 1 %} on{% endif %}">✓ Done</button>
+      <button name="value" value="0" class="chip{% if c.value == 0 %} on{% endif %}">Skip</button>
+    {% elif c.tracker.kind == "counter" %}
+      <button name="value" value="1" class="chip">+1</button>
+      {% if c.value is None %}<button name="value" value="0" class="chip">None</button>{% endif %}
+    {% elif c.tracker.kind == "scale" %}
+      {% for n in c.scale %}<button name="value" value="{{ n }}" class="chip num{% if c.value == n %} on{% endif %}">{{ n }}</button>{% endfor %}
+    {% else %}
+      <input name="value" placeholder="3h20" size="6" autocomplete="off" aria-label="{{ c.tracker.name }}">
+      <button class="chip">Save</button>
+    {% endif %}
+  </form>
+</div>

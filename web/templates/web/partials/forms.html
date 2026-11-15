@@ -1,0 +1,31 @@
+{# Quick-add forms. `show` is a space-separated list: sleep workout expense #}
+{% if "sleep" in show %}
+<form class="add-form" hx-post="{% url 'web:log' %}" hx-swap="none" hx-on::after-request="this.reset()">
+  <input type="hidden" name="kind" value="sleep"><input type="hidden" name="day" value="{{ day_field }}">
+  <strong>Sleep</strong>
+  <label>Bedtime <input type="time" name="bed"></label>
+  <label>Woke up <input type="time" name="wake"></label>
+  <button class="btn">Add</button>
+</form>
+{% endif %}
+{% if "workout" in show %}
+<form class="add-form" hx-post="{% url 'web:log' %}" hx-swap="none" hx-on::after-request="this.reset()">
+  <input type="hidden" name="kind" value="workout"><input type="hidden" name="day" value="{{ day_field }}">
+  <strong>Workout</strong>
+  <label>Type <select name="type">{% for value, label in workout_types %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+  <label>Duration <input name="duration" placeholder="60 or 1h15" size="9" autocomplete="off"></label>
+  <label class="grow">Notes <input name="notes" autocomplete="off"></label>
+  <button class="btn">Add</button>
+</form>
+{% endif %}
+{% if "expense" in show %}
+<form class="add-form" hx-post="{% url 'web:log' %}" hx-swap="none" hx-on::after-request="this.reset()">
+  <input type="hidden" name="kind" value="expense"><input type="hidden" name="day" value="{{ day_field }}">
+  <strong>Expense</strong>
+  <label>Amount <input name="amount" inputmode="decimal" size="7" placeholder="12.50" autocomplete="off" required></label>
+  <label>Currency <input name="currency" size="4" maxlength="3" placeholder="CAD" autocomplete="off"></label>
+  <label>Category <select name="category">{% for c in categories %}<option value="{{ c.slug }}">{{ c.name }}</option>{% endfor %}</select></label>
+  <label class="grow">Note <input name="note" autocomplete="off"></label>
+  <button class="btn">Add</button>
+</form>
+{% endif %}

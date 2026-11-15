@@ -1,0 +1,21 @@
+{% if errors %}
+  <ul class="preview errors">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+{% elif lines %}
+  <ul class="preview">{% for line in lines %}<li><span class="tick">{% if navigate %}→{% else %}+{% endif %}</span>{{ line }}</li>{% endfor %}</ul>
+  <p class="hint">Press <kbd>↵</kbd> to {% if navigate %}go{% else %}save{% endif %}.</p>
+{% else %}
+  <div class="examples">
+    <p class="hint">Type what happened. Separate several things with commas.</p>
+    <dl>
+      <dt>coffee · 2 coffees · no alcohol</dt><dd>counters</dd>
+      <dt>spent 12.5 food milk · $40 usd dining</dt><dd>expenses</dd>
+      <dt>woke 7:10 · slept 23:30 · slept 23:30-7:10</dt><dd>sleep</dd>
+      <dt>gym legs 60 · cardio 35m easy run</dt><dd>exercise</dd>
+      <dt>mood 4, energy 3 · screen 3h20</dt><dd>daily values</dd>
+      <dt>read · skip meditate</dt><dd>habits</dd>
+      <dt>#sick #travel · note: long day</dt><dd>context</dd>
+      <dt>yesterday coffee 3 · 2026-11-01 spent 20 food</dt><dd>backfill</dd>
+      <dt>go sleep</dt><dd>open a page</dd>
+    </dl>
+  </div>
+{% endif %}

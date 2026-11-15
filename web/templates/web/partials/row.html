@@ -1,0 +1,9 @@
+<tr id="row-{{ row.table }}-{{ row.pk }}" hx-get="{% url 'web:row' row.table row.pk %}?edit=1" hx-trigger="dblclick"
+    hx-target="this" hx-swap="outerHTML" title="Double-click to edit">
+  {% for c in row.cells %}<td class="{{ c.align }}">{{ c.value }}</td>{% endfor %}
+  <td class="row-actions">
+    <button type="button" class="link" hx-get="{% url 'web:row' row.table row.pk %}?edit=1" hx-target="closest tr"
+            hx-swap="outerHTML">Edit</button>
+    <button type="button" class="link" hx-post="{% url 'web:row_delete' row.table row.pk %}" hx-swap="none">Delete</button>
+  </td>
+</tr>

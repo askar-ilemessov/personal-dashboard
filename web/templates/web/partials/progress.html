@@ -1,0 +1,34 @@
+{% load web_tags %}{% if goals %}
+<section class="panel">
+  <h2>Goals</h2>
+  <ul class="progress-list">
+    {% for g in goals %}
+    <li>
+      <div class="progress-head">
+        <span>{{ g.goal.name }} <span class="muted">· {{ g.goal.get_period_display|lower }}</span></span>
+        <span class="status {% if g.met is None %}muted{% elif g.met %}good{% else %}bad{% endif %}">
+          {% if g.met is None %}not logged{% else %}{% if g.met %}✓{% else %}!{% endif %} {{ g.value|metric_value:g.metric.fmt }} / {{ g.goal.target|metric_value:g.metric.fmt }}{% endif %}
+        </span>
+      </div>
+      <div class="bar"><span class="{% if g.goal.comparator == 'lte' and g.met == False %}over{% endif %}" style="width: {{ g.ratio|pct }}"></span></div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% if budgets %}
+<section class="panel">
+  <h2>Budgets this month</h2>
+  <ul class="progress-list">
+    {% for b in budgets %}
+    <li>
+      <div class="progress-head">
+        <span>{{ b.category.name }}</span>
+        <span class="status {% if b.over %}bad{% endif %}">{% if b.over %}! over · {% endif %}{{ b.spent|money }} / {{ b.budget|money }}</span>
+      </div>
+      <div class="bar"><span class="{% if b.over %}over{% endif %}" style="width: {{ b.ratio|pct }}"></span></div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
