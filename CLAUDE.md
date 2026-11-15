@@ -10,6 +10,8 @@ uv run python manage.py bootstrap        # default trackers, categories, budgets
 uv run python manage.py seed --reset     # 90 days of fake data; --reset wipes all logged data
 uv run python manage.py createsuperuser
 uv run python manage.py runserver
+uv run python manage.py runbot           # Telegram bot + hourly jobs; needs TELEGRAM_* in .env
+docker compose up -d --build             # production stack (db, web, bot, caddy)
 uv run pytest -q
 uv run ruff check .
 ```
@@ -25,7 +27,9 @@ uv run ruff check .
 - `tracking/fmt.py` — human-readable values (durations, money), shared by every front end.
 - `parsing/grammar.py` — deterministic quick-log grammar (`parse(text) -> Parsed(intents, errors)`); `parsing/describe.py` turns intents into preview/toast text. The LLM tier is added in phase 4.
 - `web/` — the UI. `views.py` (pages and actions), `tables.py` (one class per row type drives columns, inline edit form, filters, sort and CSV), `charts.py` (SVG sparkline/heatmap and Chart.js payloads), `static/web/app.js` and `app.css`, `templates/web/`.
-- Planned apps: `insights` (5), `bot` (3), `api` (6). They are thin adapters with no business logic.
+- `bot/` — Telegram bot. `replies.py` holds everything the bot says as plain sync functions returning `Reply(text, buttons)`; `handlers.py` is thin aiogram wiring; `management/commands/runbot.py` runs polling plus hourly housekeeping (`materialize_recurring`).
+- `Dockerfile`, `docker-compose.yml`, `Caddyfile` — production stack. See README.md for deploy steps.
+- Planned apps: `insights` (5), `api` (6). They are thin adapters with no business logic.
 
 ## Rules
 
@@ -49,6 +53,21 @@ uv run ruff check .
 - Every page requires login (`LoginRequiredMiddleware`). A local `dev` user exists for development; its password is `DEV_PASSWORD` in `.env`.
 - Dev server for previews: `.claude/launch.json` runs it on port 8765.
 
+## Bot conventions
+
+- Commands and buttons log immediately and reply with an Undo button. Free text gets a "Save this?" preview first; confirming re-parses the message being replied to, so no pending state is stored.
+- Every command is turned into grammar text (`/drink 2` -> `alcohol 2`) and goes through `parsing.grammar`; unknown commands are passed through, so a new tracker is a command with no code.
+- Callback data: `q:<grammar text>`, `undo:<op id>`, `habit:<slug>`, `ok`, `no`, `habits`, `today`, `menu` (64-byte limit).
+- Only `TELEGRAM_USER_ID` is served; other updates are dropped silently by the `OwnerOnly` middleware.
+- Messages use HTML parse mode: escape anything that came from the user or the database.
+- Bot tests feed real `Update` objects through the dispatcher with a fake session (`bot/tests/test_bot.py`); no token or network.
+
+## Production
+
+- `DEBUG=false` turns on secure cookies and hashed static files (WhiteNoise). `DOMAIN` adds the host to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`.
+- The `web` container runs `migrate` and `bootstrap` on start; `bot` waits for `web` to be healthy.
+- Vendored JS must not contain `sourceMappingURL` comments (the manifest storage fails on missing maps).
+
 ## Decisions
 
 - Hybrid model: generic `Tracker`/`Entry` for configurable things; typed tables for expenses, sleep and workouts.
@@ -67,7 +86,7 @@ Tests are required for the logging service, the parser and the stats engine. Tes
 
 - [x] Phase 1: data model, admin, seed, logging service, tests
 - [x] Phase 2: web app (Today, day view/backfill, detail pages, tables with inline edit and CSV, habits heatmap, trends, command palette on the deterministic grammar)
-- [ ] Phase 3: Telegram bot + minimal deploy
+- [x] Phase 3: Telegram bot (commands, buttons, /today, /week, undo) + Docker stack. Not yet run against real Telegram or deployed to a server.
 - [ ] Phase 4: natural-language parser
 - [ ] Phase 5: insights
 - [ ] Phase 6: goals/budgets UI, reminders, Shortcuts, backups, deploy hardening

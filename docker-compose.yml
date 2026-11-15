@@ -1,0 +1,70 @@
+# Production stack. Configure it in .env (see .env.example), then:
+#   docker compose up -d --build
+#   docker compose exec web python manage.py createsuperuser
+
+x-app: &app
+  build: .
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    DEBUG: "false"
+    DATABASE_URL: postgres://dashboard:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/dashboard
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: dashboard
+      POSTGRES_USER: dashboard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dashboard -d dashboard"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    <<: *app
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py bootstrap &&
+             gunicorn config.wsgi --bind 0.0.0.0:8000 --workers 2 --access-logfile -"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/login/', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  bot:
+    <<: *app
+    command: python manage.py runbot
+    depends_on:
+      web:
+        condition: service_healthy  # migrations have run by then
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
