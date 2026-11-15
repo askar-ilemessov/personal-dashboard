@@ -297,15 +297,66 @@ async def test_review_and_ask_commands(chat):
 
 
 def test_sunday_review_is_sent_once(db, monkeypatch):
-    from bot.management.commands import runbot
+    from bot import jobs
     from insights import review
     from insights.models import WeeklyReview
 
     defaults.install()
     monday = review.facts_module.week_start(days.today())
     monkeypatch.setattr(review, "due", lambda now=None: None)
-    assert runbot.send_weekly_review_if_due() is None and not WeeklyReview.objects.exists()
+    assert jobs.weekly_review() is None and not WeeklyReview.objects.exists()
 
     monkeypatch.setattr(review, "due", lambda now=None: monday)
-    assert runbot.send_weekly_review_if_due().startswith("<b>Weekly review")
+    assert jobs.weekly_review().text.startswith("<b>Weekly review")
     assert WeeklyReview.objects.get().sent_at is not None
+
+
+def test_evening_reminder(db):
+    from bot import jobs
+    from conftest import local
+
+    defaults.install()
+    s = AppSettings.load()
+    s.timezone = "America/Toronto"
+    s.save()
+    assert jobs.evening_reminder(local(2026, 11, 14, 20, 59)) is None  # before 21:00
+
+    reply = jobs.evening_reminder(local(2026, 11, 14, 21, 0))
+    assert reply.text.startswith("<b>Still unlogged today</b>") and "Coffee" in reply.text and "Sleep" in reply.text
+    assert ("Coffee +1", "q:coffee") in [b for row in reply.buttons for b in row]
+    assert jobs.evening_reminder(local(2026, 11, 14, 23, 0)) is None  # once per day
+    # After midnight it is still the same logical day; the next one starts at 04:00.
+    assert jobs.evening_reminder(local(2026, 11, 15, 1, 0)) is None
+    assert jobs.evening_reminder(local(2026, 11, 15, 12, 0)) is None
+    assert jobs.evening_reminder(local(2026, 11, 15, 21, 30)) is not None
+
+
+def test_reminder_lists_only_what_is_missing_and_can_be_off(db):
+    from bot import jobs
+    from conftest import local
+
+    defaults.install()
+    now = local(2026, 11, 14, 21, 5)
+    logbook.apply([TrackerLog(tracker="coffee", value=0), TrackerLog(tracker="mood", value=4)], source="web", now=now)
+    text = jobs.evening_reminder(now).text
+    assert "Coffee" not in text and "Mood" not in text and "Alcohol" in text  # a logged zero counts as logged
+
+    s = AppSettings.load()
+    s.reminder_enabled, s.last_reminder_day = False, None
+    s.save()
+    assert jobs.evening_reminder(local(2026, 11, 15, 22, 0)) is None
+
+
+def test_a_reminder_time_after_midnight_belongs_to_the_evening(db):
+    from datetime import time
+
+    from bot import jobs
+    from conftest import local
+
+    defaults.install()
+    s = AppSettings.load()
+    s.timezone, s.reminder_time = "America/Toronto", time(0, 30)
+    s.save()
+    assert not jobs.reminder_due(local(2026, 11, 14, 9, 0))  # morning: 00:30 tonight hasn't come yet
+    assert not jobs.reminder_due(local(2026, 11, 14, 23, 59))
+    assert jobs.reminder_due(local(2026, 11, 15, 0, 30))

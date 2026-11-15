@@ -480,23 +480,6 @@ def correlations(request):
     })
 
 
-def settings_page(request):
-    s = AppSettings.load()
-    links = [
-        ("Day boundary, timezone, reminder", "admin:tracking_appsettings_change", [1]),
-        ("Trackers (habits, counters, scales)", "admin:tracking_tracker_changelist", []),
-        ("Expense categories", "admin:tracking_expensecategory_changelist", []),
-        ("Budgets", "admin:tracking_budget_changelist", []),
-        ("Recurring expenses", "admin:tracking_recurringexpense_changelist", []),
-        ("Exchange rates", "admin:tracking_exchangerate_changelist", []),
-        ("Goals and limits", "admin:tracking_goal_changelist", []),
-    ]
-    return render(request, "web/settings.html", {
-        "nav": "settings", "settings": s,
-        "links": [(label, reverse(name, args=args)) for label, name, args in links],
-    })
-
-
 # --- logging actions -------------------------------------------------------
 
 

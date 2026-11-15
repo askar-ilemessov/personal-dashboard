@@ -20,6 +20,14 @@ def no_real_llm(settings):
 
 
 @pytest.fixture(autouse=True)
+def fresh_cache():
+    """Rate-limit counters live in the cache; don't let them leak between tests."""
+    from django.core.cache import cache
+
+    cache.clear()
+
+
+@pytest.fixture(autouse=True)
 def configured(db):
     defaults.install()
     s = AppSettings.load()

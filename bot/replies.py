@@ -287,3 +287,17 @@ def ask(question: str) -> Reply:
     if answer.unverified:
         text += "\n\n<i>Check these figures, no query returned them: " + escape(", ".join(answer.unverified)) + "</i>"
     return Reply(text)
+
+
+def reminder(day) -> Reply | None:
+    """Evening nudge listing what is still unlogged, with one-tap buttons."""
+    names = []
+    for key in metrics.unlogged(day):
+        try:
+            names.append(metrics.get(key).name)
+        except (KeyError, Tracker.DoesNotExist):
+            continue
+    if not names:
+        return None
+    return Reply("<b>Still unlogged today</b>\n" + escape(", ".join(names)) +
+                 "\n\nTap below, or just tell me.", menu().buttons)

@@ -1,18 +1,115 @@
 {% extends "web/base.html" %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-<header class="page-head"><div><h1>Settings</h1><p class="sub">Configuration is edited in the admin for now; a dedicated screen comes in phase 6.</p></div></header>
+<header class="page-head"><div><h1>Settings</h1></div></header>
+
 <section class="panel">
-  <h2>Current</h2>
-  <dl class="kv">
-    <dt>Timezone</dt><dd>{{ settings.timezone }}</dd>
-    <dt>Day starts at</dt><dd>{{ settings.day_start|time:"H:i" }}</dd>
-    <dt>Default currency</dt><dd>{{ settings.default_currency }}</dd>
-    <dt>Evening reminder</dt><dd>{% if settings.reminder_enabled %}{{ settings.reminder_time|time:"H:i" }}{% else %}off{% endif %}</dd>
-  </dl>
+  <h2>General</h2>
+  <form class="settings-form" hx-post="{% url 'web:settings_general' %}" hx-swap="none">
+    <label>Timezone
+      <input name="timezone" value="{{ settings.timezone }}" list="timezones" autocomplete="off" required>
+      <datalist id="timezones">{% for z in timezones %}<option value="{{ z }}">{% endfor %}</datalist>
+    </label>
+    <label>Day starts at <input type="time" name="day_start" value="{{ settings.day_start|time:'H:i' }}" required>
+      <span class="hint">Anything logged before this counts for the previous day.</span></label>
+    <label class="check"><input type="checkbox" name="reminder_enabled"{% if settings.reminder_enabled %} checked{% endif %}> Evening reminder on Telegram at
+      <input type="time" name="reminder_time" value="{{ settings.reminder_time|time:'H:i' }}" required aria-label="Reminder time"></label>
+    <label class="check"><input type="checkbox" name="weekly_review_enabled"{% if settings.weekly_review_enabled %} checked{% endif %}> Weekly review on Telegram, Sunday at
+      <input type="time" name="weekly_review_time" value="{{ settings.weekly_review_time|time:'H:i' }}" required aria-label="Review time"></label>
+    <div><button class="btn primary">Save</button></div>
+  </form>
 </section>
+
 <section class="panel">
-  <h2>Edit</h2>
+  <h2>Goals and limits</h2>
+  <table class="table">
+    <tbody>
+    {% for g in goals %}
+      <tr{% if not g.goal.is_active %} class="off"{% endif %}>
+        <td>{{ g.goal.name }}</td>
+        <td class="muted">{% if g.metric %}{{ g.metric.name }} {{ g.goal.get_comparator_display|lower }} {{ g.target }} {{ g.goal.get_period_display|lower }}{% else %}its tracker no longer exists{% endif %}</td>
+        <td class="row-actions">
+          <button type="button" class="link" hx-post="{% url 'web:goal_change' g.goal.pk 'toggle' %}" hx-swap="none">{% if g.goal.is_active %}Pause{% else %}Resume{% endif %}</button>
+          <button type="button" class="link" hx-post="{% url 'web:goal_change' g.goal.pk 'delete' %}" hx-swap="none">Delete</button>
+        </td>
+      </tr>
+    {% empty %}<tr><td class="empty">No goals yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <form class="add-form" hx-post="{% url 'web:goal_add' %}" hx-swap="none" hx-on::after-request="this.reset()">
+    <strong>New goal</strong>
+    <label>About <select name="metric">{% for m in goal_metrics %}<option value="{{ m.key }}">{{ m.name }}</option>{% endfor %}</select></label>
+    <label>Should be <select name="comparator"><option value="lte">at most</option><option value="gte">at least</option></select></label>
+    <label>Target <input name="target" size="7" placeholder="2 or 7h" autocomplete="off" required></label>
+    <label>Per <select name="period"><option value="day">day</option><option value="week">week</option><option value="month">month</option></select></label>
+    <label class="grow">Name (optional) <input name="name" autocomplete="off"></label>
+    <button class="btn">Add</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Monthly budgets</h2>
+  <form hx-post="{% url 'web:settings_budgets' %}" hx-swap="none">
+    <div class="budget-grid">
+      {% for row in budget_rows %}
+      <label>{{ row.category.name }}
+        <input name="budget-{{ row.category.pk }}" inputmode="decimal" size="8" placeholder="no budget" value="{% if row.amount %}{{ row.amount|floatformat:"-2" }}{% endif %}" autocomplete="off">
+      </label>
+      {% endfor %}
+    </div>
+    <p class="hint">Leave a category blank for no budget. Changes apply from this month; earlier months keep the budget they had.</p>
+    <button class="btn primary">Save budgets</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Trackers</h2>
+  <table class="table">
+    <tbody>
+    {% for t in trackers %}
+      <tr{% if not t.is_active %} class="off"{% endif %}>
+        <td><a href="{% url 'web:tracker' t.slug %}">{{ t.name }}</a></td>
+        <td class="muted">{{ t.get_kind_display }}{% if t.unit %} · {{ t.unit }}{% endif %}</td>
+        <td class="muted"><code>{{ t.slug }}</code>{% if t.aliases %} · also {{ t.aliases|join:", " }}{% endif %}</td>
+        <td class="row-actions"><button type="button" class="link" hx-post="{% url 'web:tracker_toggle' t.pk %}" hx-swap="none">{% if t.is_active %}Hide{% else %}Show{% endif %}</button></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <form class="add-form" hx-post="{% url 'web:tracker_add' %}" hx-swap="none" hx-on::after-request="this.reset()" x-data="{ kind: 'habit' }">
+    <strong>New tracker</strong>
+    <label>Name <input name="name" autocomplete="off" required></label>
+    <label>Kind <select name="kind" x-model="kind">{% for value, label in kinds %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+    <label x-show="kind === 'counter'">Unit <input name="unit" size="8" placeholder="glasses" autocomplete="off"></label>
+    <label x-show="kind === 'scale'">From <input name="min" size="3" value="1" inputmode="numeric"></label>
+    <label x-show="kind === 'scale'">To <input name="max" size="3" value="5" inputmode="numeric"></label>
+    <label class="grow">Other names (comma separated) <input name="aliases" autocomplete="off"></label>
+    <button class="btn">Add</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>iOS Shortcuts and API tokens</h2>
+  <p class="hint" style="margin-top: 0">A Shortcut can log by sending <code>POST {{ api_url }}</code> with the header <code>Authorization: Bearer &lt;token&gt;</code> and a JSON body such as <code>{"text": "woke"}</code>. The README has a step-by-step example.</p>
+  <table class="table">
+    <tbody>
+    {% for t in tokens %}
+      <tr><td>{{ t.name }}</td>
+        <td class="muted">created {{ t.created_at|date:"M j, Y" }} · {% if t.last_used_at %}last used {{ t.last_used_at|timesince }} ago{% else %}never used{% endif %}</td>
+        <td class="row-actions"><button type="button" class="link" hx-post="{% url 'web:token_revoke' t.pk %}" hx-swap="none">Revoke</button></td></tr>
+    {% empty %}<tr><td class="empty">No tokens yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <div id="new-token"></div>
+  <form class="add-form" hx-post="{% url 'web:token_add' %}" hx-target="#new-token" hx-swap="innerHTML" hx-on::after-request="this.reset()">
+    <strong>New token</strong>
+    <label class="grow">Used by <input name="name" placeholder="iPhone Shortcuts" autocomplete="off" required></label>
+    <button class="btn">Create</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>More in the admin</h2>
   <ul class="link-list" hx-boost="false">{% for label, url in links %}<li><a href="{{ url }}">{{ label }}</a></li>{% endfor %}</ul>
 </section>
 {% endblock %}

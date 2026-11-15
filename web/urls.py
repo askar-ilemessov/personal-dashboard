@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import settings_views, views
 
 app_name = "web"
 
@@ -17,7 +17,15 @@ urlpatterns = [
     path("insights/review/", views.insights_review, name="insights_review"),
     path("insights/ask/", views.insights_ask, name="insights_ask"),
     path("insights/correlations/", views.correlations, name="correlations"),
-    path("settings/", views.settings_page, name="settings"),
+    path("settings/", settings_views.page, name="settings"),
+    path("settings/general/", settings_views.general, name="settings_general"),
+    path("settings/goals/", settings_views.goal_add, name="goal_add"),
+    path("settings/goals/<int:pk>/<str:action>/", settings_views.goal_change, name="goal_change"),
+    path("settings/budgets/", settings_views.budgets, name="settings_budgets"),
+    path("settings/trackers/", settings_views.tracker_add, name="tracker_add"),
+    path("settings/trackers/<int:pk>/toggle/", settings_views.tracker_toggle, name="tracker_toggle"),
+    path("settings/tokens/", settings_views.token_add, name="token_add"),
+    path("settings/tokens/<int:pk>/revoke/", settings_views.token_revoke, name="token_revoke"),
     path("t/<slug:slug>/", views.tracker_detail, name="tracker"),
     path("log/", views.log, name="log"),
     path("palette/parse/", views.palette_parse, name="palette_parse"),

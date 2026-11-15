@@ -2,9 +2,16 @@
 #   docker compose up -d --build
 #   docker compose exec web python manage.py createsuperuser
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-app: &app
   build: .
   restart: unless-stopped
+  logging: *logging
   env_file: .env
   environment:
     DEBUG: "false"
@@ -14,6 +21,7 @@ services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_DB: dashboard
       POSTGRES_USER: dashboard
@@ -31,7 +39,7 @@ services:
     command: >
       sh -c "python manage.py migrate --noinput &&
              python manage.py bootstrap &&
-             gunicorn config.wsgi --bind 0.0.0.0:8000 --workers 2 --access-logfile -"
+             gunicorn config.wsgi --bind 0.0.0.0:8000 --worker-class gthread --workers 2 --threads 4 --timeout 120 --access-logfile -"
     depends_on:
       db:
         condition: service_healthy
@@ -49,9 +57,26 @@ services:
       web:
         condition: service_healthy  # migrations have run by then
 
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    logging: *logging
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-8}
+    volumes:
+      - ./deploy/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    logging: *logging
     ports:
       - "80:80"
       - "443:443"

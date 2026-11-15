@@ -297,3 +297,112 @@ def test_today_shows_flags(client):
     client.post("/log/", {"kind": "expense", "amount": "900", "category": "shopping", "day": (today - td(days=2)).isoformat()})
     html = client.get("/").content.decode()
     assert "Spending spike on" in html
+
+
+# --- settings ---------------------------------------------------------------------
+
+
+def test_settings_general(client):
+    from tracking.models import AppSettings
+
+    assert client.get("/settings/").status_code == 200
+    data = {"timezone": "Europe/Berlin", "day_start": "05:00", "reminder_time": "22:15", "weekly_review_time": "17:00",
+            "reminder_enabled": "on"}
+    assert "error" not in events(client.post("/settings/general/", data))["toast"]
+    s = AppSettings.load()
+    assert (s.timezone, s.day_start.hour, s.reminder_time.minute) == ("Europe/Berlin", 5, 15)
+    assert s.reminder_enabled and not s.weekly_review_enabled  # unchecked box turns it off
+
+    bad = events(client.post("/settings/general/", {**data, "timezone": "Mars/Olympus"}))
+    assert bad["toast"]["error"] and AppSettings.load().timezone == "Europe/Berlin"
+    assert events(client.post("/settings/general/", {**data, "day_start": "soon"}))["toast"]["error"]
+
+
+def test_settings_goals(client):
+    from tracking.models import Goal
+
+    Goal.objects.all().delete()
+    ev = events(client.post("/settings/goals/", {"metric": "sleep.duration", "comparator": "gte", "target": "7h30", "period": "day"}))
+    assert ev["toast"]["message"] == "Goal added: At least 7h 30m sleep a day"
+    goal = Goal.objects.get()
+    assert (goal.metric, goal.target, goal.comparator) == ("sleep.duration", 450, "gte")
+    client.post("/settings/goals/", {"metric": "exercise.sessions", "comparator": "gte", "target": "4", "period": "week", "name": "Gym"})
+    assert Goal.objects.get(name="Gym").period == "week"
+    assert "At least 7h 30m" in client.get("/").content.decode()  # shows up on Today straight away
+
+    for bad in ({"metric": "nope", "comparator": "gte", "target": "1", "period": "day"},
+                {"metric": "tracker:coffee", "comparator": "gte", "target": "lots", "period": "day"},
+                {"metric": "sleep.duration", "comparator": "gte", "target": "soon", "period": "day"},
+                {"metric": "tracker:coffee", "comparator": "eq", "target": "1", "period": "day"}):
+        assert events(client.post("/settings/goals/", bad))["toast"]["error"]
+    assert Goal.objects.count() == 2
+
+    client.post(f"/settings/goals/{goal.pk}/toggle/")
+    goal.refresh_from_db()
+    assert not goal.is_active and "At least 7h 30m" not in client.get("/").content.decode()
+    client.post(f"/settings/goals/{goal.pk}/delete/")
+    assert Goal.objects.count() == 1
+
+
+def test_settings_budgets_keep_history(client):
+    from datetime import date
+    from decimal import Decimal
+
+    from tracking.models import Budget, ExpenseCategory
+
+    food, fun = ExpenseCategory.objects.get(slug="food"), ExpenseCategory.objects.get(slug="fun")
+    data = {f"budget-{c.pk}": "" for c in ExpenseCategory.objects.all()}
+    data |= {f"budget-{food.pk}": "$650", f"budget-{fun.pk}": ""}
+    assert events(client.post("/settings/budgets/", data))["toast"]["message"] == "Budgets saved."
+
+    today = days.today()
+    current = {b["category"].slug: b["budget"] for b in metrics.budgets(today)}
+    assert current == {"food": Decimal(650)}  # every other category was blanked
+    # Earlier months still see the old budgets.
+    earlier = {b["category"].slug: b["budget"] for b in metrics.budgets(date(2020, 6, 15))}
+    assert earlier["food"] == Decimal(500) and earlier["fun"] == Decimal(150)
+    assert Budget.objects.filter(category=food).count() == 2
+
+    client.post("/settings/budgets/", data)  # saving again changes nothing
+    assert Budget.objects.filter(category=food).count() == 2
+    assert events(client.post("/settings/budgets/", {**data, f"budget-{food.pk}": "plenty"}))["toast"]["error"]
+    assert 'value="650"' in client.get("/settings/").content.decode()
+
+
+def test_settings_trackers_need_no_code(client):
+    from tracking.models import Tracker
+
+    ev = events(client.post("/settings/trackers/", {"name": "Water", "kind": "counter", "unit": "glasses", "aliases": "h2o, Glass of water"}))
+    assert "Tracker added: Water" in ev["toast"]["message"]
+    client.post("/settings/trackers/", {"name": "Focus", "kind": "scale", "min": "1", "max": "10"})
+    client.post("/settings/trackers/", {"name": "Deep work", "kind": "duration"})
+    assert Tracker.objects.get(slug="focus").max_value == 10 and Tracker.objects.get(slug="deep-work").unit == "min"
+
+    # Usable everywhere immediately: palette, quick log, Today, detail page.
+    assert "palette-close" in events(client.post("/palette/confirm/", {"text": "3 h2o, focus 8, deep work 1h30"}))
+    today = days.today()
+    assert metrics.value("tracker:water", today) == 3 and metrics.value("tracker:deep-work", today) == 90
+    assert "Water" in client.get("/").content.decode() and client.get("/t/water/").status_code == 200
+
+    for bad in ({"name": "Water", "kind": "counter"}, {"name": "", "kind": "habit"}, {"name": "X", "kind": "poem"},
+                {"name": "Bad scale", "kind": "scale", "min": "5", "max": "1"}):
+        assert events(client.post("/settings/trackers/", bad))["toast"]["error"]
+
+    water = Tracker.objects.get(slug="water")
+    client.post(f"/settings/trackers/{water.pk}/toggle/")
+    assert events(client.post("/log/", {"kind": "tracker", "tracker": "water"}))["toast"]["error"]  # hidden
+    assert metrics.value("tracker:water", today) == 3  # history kept
+
+
+def test_settings_tokens(client):
+    from tracking.models import ApiToken
+
+    html = client.post("/settings/tokens/", {"name": "iPhone Shortcuts"}).content.decode()
+    token = ApiToken.objects.get()
+    raw = html.split('value="')[1].split('"')[0]
+    assert ApiToken.lookup(raw) == token and "can't be shown again" in html
+    assert raw not in client.get("/settings/").content.decode()  # shown once only
+    assert "iPhone Shortcuts" in client.get("/settings/").content.decode()
+    assert events(client.post("/settings/tokens/", {"name": ""}))["toast"]["error"]
+    client.post(f"/settings/tokens/{token.pk}/revoke/")
+    assert not ApiToken.objects.exists()

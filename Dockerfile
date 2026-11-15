@@ -20,4 +20,5 @@ RUN useradd --system --no-create-home app
 USER app
 
 EXPOSE 8000
-CMD ["gunicorn", "config.wsgi", "--bind", "0.0.0.0:8000", "--workers", "2", "--access-logfile", "-"]
+# Threads, and a timeout above the longest Claude call (Ask my data, weekly review).
+CMD ["gunicorn", "config.wsgi", "--bind", "0.0.0.0:8000", "--worker-class", "gthread", "--workers", "2", "--threads", "4", "--timeout", "120", "--access-logfile", "-"]

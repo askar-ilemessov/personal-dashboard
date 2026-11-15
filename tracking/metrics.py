@@ -247,6 +247,8 @@ def budgets(today: date) -> list[dict]:
         if b.category_id in seen or not b.category.is_active:
             continue
         seen.add(b.category_id)
+        if not b.monthly_amount:
+            continue  # a zero row means "no budget from this month on"
         used = spent.get(b.category.slug, Decimal(0))
         out.append({
             "category": b.category, "spent": used, "budget": b.monthly_amount,

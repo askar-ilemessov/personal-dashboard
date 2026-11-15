@@ -7,42 +7,22 @@ from aiogram.types import BotCommand
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
-from django.utils import timezone
 
-from bot import replies
-from bot.handlers import COMMANDS, build_dispatcher
-from insights import review
-from insights.models import WeeklyReview
-from tracking import logbook
+from bot import jobs
+from bot.handlers import COMMANDS, _markup, build_dispatcher
 
 log = logging.getLogger("bot")
 
 
-CHECK_EVERY = 600  # seconds
-
-
-def send_weekly_review_if_due():
-    """Returns the message to send, or None. Marks the review as sent."""
-    start = review.due()
-    if start is None:
-        return None
-    reply = replies.review(start)
-    WeeklyReview.objects.filter(week_start=start).update(sent_at=timezone.now())
-    return reply.text
+CHECK_EVERY = 60  # seconds
 
 
 async def housekeeping(bot: Bot):
-    """Periodic jobs: recurring expenses and the Sunday review. The evening
-    reminder joins this in phase 6."""
+    """Every minute: recurring expenses, the evening reminder, the Sunday review."""
     while True:
         try:
-            op = await sync_to_async(logbook.materialize_recurring)()
-            if op:
-                log.info("Recurring expenses added: %s", len(op.changes))
-            text = await sync_to_async(send_weekly_review_if_due)()
-            if text:
-                await bot.send_message(settings.TELEGRAM_USER_ID, text)
-                log.info("Weekly review sent")
+            for reply in await sync_to_async(jobs.run_due)():
+                await bot.send_message(settings.TELEGRAM_USER_ID, reply.text, reply_markup=_markup(reply))
         except Exception:
             log.exception("Housekeeping failed")
         await asyncio.sleep(CHECK_EVERY)

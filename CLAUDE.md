@@ -33,7 +33,10 @@ uv run ruff check .
 - `bot/` — Telegram bot. `replies.py` holds everything the bot says as plain sync functions returning `Reply(text, buttons)`; `handlers.py` is thin aiogram wiring; `management/commands/runbot.py` runs polling plus hourly housekeeping (`materialize_recurring`).
 - `Dockerfile`, `docker-compose.yml`, `Caddyfile` — production stack. See README.md for deploy steps.
 - `insights/` — `stats.py` (the stats engine: pure functions, no DB or LLM), `facts.py` (correlations, anomaly flags, weekly facts, all pre-formatted), `review.py` (weekly review: Claude or template writer, number check, Sunday schedule), `ask.py` (Ask my data: fixed read-only query tools and the tool loop).
-- Planned app: `api` (6). They are thin adapters with no business logic.
+- `api/` — token-protected HTTP API for iOS Shortcuts (`POST /api/v1/log`, `POST /api/v1/undo`, `GET /api/v1/today`), built on DRF. `auth.py` holds the bearer-token check and rate limits.
+- `web/settings_views.py` — the Settings screen (general, goals, budgets, trackers, API tokens).
+- `bot/jobs.py` — scheduled jobs (`run_due`, called every minute by `runbot`): recurring expenses, evening reminder, Sunday review.
+- `deploy/backup.sh` — nightly `pg_dump` loop run by the `backup` compose service. They are thin adapters with no business logic.
 
 ## Rules
 
@@ -86,10 +89,27 @@ uv run ruff check .
 - Messages use HTML parse mode: escape anything that came from the user or the database.
 - Bot tests feed real `Update` objects through the dispatcher with a fake session (`bot/tests/test_bot.py`); no token or network.
 
+## API conventions
+
+- Auth is `Authorization: Bearer <token>`; only the SHA-256 of a token is stored (`ApiToken.issue` / `ApiToken.lookup`), and the raw value is shown once.
+- API views are marked `login_not_required` and never fall back to the browser session.
+- `log` uses the grammar only unless the request sends `"llm": true`, because there is no confirm step. Source is `shortcut`; the API can undo only its own operations.
+- Wrong tokens are counted per address in `BearerToken.count_failure` (DRF throttles run only after authentication succeeds); valid tokens are limited by `TokenThrottle`. Counters use the per-process cache.
+
+## Settings and scheduling conventions
+
+- Settings views edit configuration models directly (they are not logged rows). Validation errors are toasts, like everywhere else.
+- Budgets keep history: saving creates a row effective from the first of the current month; a zero amount means "no budget from here on" and `metrics.budgets` skips it.
+- Hiding a tracker sets `is_active=False`; its history stays and it disappears from logging, cards and the parser.
+- Each scheduled job records that it ran (`AppSettings.last_reminder_day`, `WeeklyReview.sent_at`) so a restart never sends twice. The reminder time is compared in minutes since the day boundary, so a time after midnight still counts as that evening.
+
 ## Production
 
 - `DEBUG=false` turns on secure cookies and hashed static files (WhiteNoise). `DOMAIN` adds the host to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`.
 - The `web` container runs `migrate` and `bootstrap` on start; `bot` waits for `web` to be healthy.
+- gunicorn runs threaded with a 120s timeout because Ask my data and the review can wait on Claude for over a minute.
+- The `backup` service dumps the database daily to `./backups` (custom format, verified with `pg_restore --list`, 14 days kept). Restore steps are in README.md. Backups are on the same server only.
+- `manage.py check --deploy` is clean apart from three checks silenced on purpose in settings (Caddy does the HTTPS redirect; HSTS is limited to this host).
 - Vendored JS must not contain `sourceMappingURL` comments (the manifest storage fails on missing maps).
 
 ## Decisions
@@ -113,4 +133,4 @@ Tests are required for the logging service, the parser and the stats engine. Tes
 - [x] Phase 3: Telegram bot (commands, buttons, /today, /week, undo) + Docker stack. Not yet run against real Telegram or deployed to a server.
 - [x] Phase 4: natural-language parser (Claude tier, drafts, palette and bot wiring). Tested with a fake client only; not yet run against the real API.
 - [x] Phase 5: insights (stats engine, correlations, anomaly flags, weekly review with Sunday delivery, Ask my data). Claude wording and Ask my data are tested with fake clients only.
-- [ ] Phase 6: goals/budgets UI, reminders, Shortcuts, backups, deploy hardening
+- [x] Phase 6: Settings screen (general, goals, budgets, trackers, tokens), evening reminder, Shortcuts API, nightly backups, deploy hardening. Not yet deployed to a real server or run against real Telegram / the real Claude API.

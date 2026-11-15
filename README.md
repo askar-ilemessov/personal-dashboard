@@ -33,4 +33,42 @@ docker compose exec web python manage.py createsuperuser
 
 Caddy obtains the HTTPS certificate for `DOMAIN` on first start. To update later: `git pull && docker compose up -d --build`. Logs: `docker compose logs -f web bot`.
 
-Database backups are not set up yet (phase 6). Until then: `docker compose exec db pg_dump -U dashboard dashboard > backup.sql`.
+## Backups
+
+The `backup` container writes a database dump to `./backups` on the server once a day (after `BACKUP_HOUR_UTC`, default 08:00 UTC) and keeps the last `BACKUP_KEEP_DAYS` (default 14). Each dump is checked for readability before it replaces the day's file.
+
+The dumps live on the same server as the database. Copy `./backups` somewhere else as well (another machine or cloud storage) if you want to survive losing the server.
+
+Take one now:
+
+```bash
+docker compose run --rm --no-deps backup once
+```
+
+Restore (this replaces the current data):
+
+```bash
+docker compose exec -T db pg_restore -U dashboard -d dashboard --clean --if-exists < backups/dashboard_2026-11-15.dump
+```
+
+## iOS Shortcuts
+
+1. In the web app, open Settings → iOS Shortcuts and API tokens, create a token and copy it (it is shown once).
+2. In the Shortcuts app, add the action **Get Contents of URL**:
+   - URL: `https://YOUR-DOMAIN/api/v1/log`
+   - Method: `POST`
+   - Headers: `Authorization` = `Bearer YOUR-TOKEN`
+   - Request Body: JSON, with a field `text` set to what to log, for example `woke`
+3. To log your wake time automatically, create a personal automation "When my alarm is stopped" that runs this shortcut.
+
+Anything the quick-log grammar understands works as `text`: `woke`, `slept`, `coffee`, `spent 12.5 food lunch`, `gym legs 60`. Add `"llm": true` to the body to let Claude interpret plain sentences; that saves without a confirmation step.
+
+Other endpoints: `POST /api/v1/undo` with `{"operation": <id from the log response>}`, and `GET /api/v1/today` for today's values and what is still unlogged.
+
+```bash
+curl -X POST https://YOUR-DOMAIN/api/v1/log -H "Authorization: Bearer YOUR-TOKEN" -H "Content-Type: application/json" -d '{"text": "woke"}'
+```
+
+## Reminders
+
+With the bot running, it sends an evening message listing anything still unlogged (default 21:00) and the weekly review on Sunday (default 18:00). Both times, and whether they are sent at all, are under Settings → General.

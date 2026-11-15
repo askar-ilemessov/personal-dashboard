@@ -8,6 +8,8 @@ Conventions (see CLAUDE.md):
 - All writes go through tracking.logbook, never directly.
 """
 
+import hashlib
+import secrets
 from datetime import time
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -43,6 +45,7 @@ class AppSettings(models.Model):
     reminder_enabled = models.BooleanField(default=True)
     weekly_review_enabled = models.BooleanField(default=True, help_text="Send the weekly review on Telegram")
     weekly_review_time = models.TimeField(default=time(18, 0), help_text="Sunday, local time")
+    last_reminder_day = models.DateField(null=True, blank=True, editable=False)
 
     class Meta:
         verbose_name = verbose_name_plural = "Settings"
@@ -387,3 +390,17 @@ class ApiToken(models.Model):
 
     def __str__(self):
         return self.name
+
+    @staticmethod
+    def digest(raw: str) -> str:
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    @classmethod
+    def issue(cls, name: str) -> tuple["ApiToken", str]:
+        """Create a token. The raw value is returned once and never stored."""
+        raw = secrets.token_urlsafe(32)
+        return cls.objects.create(name=name, token_hash=cls.digest(raw)), raw
+
+    @classmethod
+    def lookup(cls, raw: str) -> "ApiToken | None":
+        return cls.objects.filter(token_hash=cls.digest(raw), is_active=True).first()

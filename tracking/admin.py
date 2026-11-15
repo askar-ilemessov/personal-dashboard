@@ -1,7 +1,6 @@
 """Admin is for configuration and inspection. Day-to-day logging goes through
 tracking.logbook so that undo and day assignment stay consistent."""
 
-import hashlib
 import secrets
 
 from django.contrib import admin, messages
@@ -115,6 +114,6 @@ class ApiTokenAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         if not change:
             token = secrets.token_urlsafe(32)
-            obj.token_hash = hashlib.sha256(token.encode()).hexdigest()
+            obj.token_hash = models.ApiToken.digest(token)
             messages.warning(request, f"Token (shown once, copy it now): {token}")
         super().save_model(request, obj, form, change)

@@ -21,6 +21,13 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_AGE = 60 * 60 * 24 * 90
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = "same-origin"
+    X_FRAME_OPTIONS = "DENY"
+    # Caddy redirects HTTP to HTTPS, and HSTS is deliberately limited to this
+    # host (no subdomains, no preload) so other sites on the domain are unaffected.
+    SILENCED_SYSTEM_CHECKS = ["security.W005", "security.W008", "security.W021"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -35,6 +42,7 @@ INSTALLED_APPS = [
     "web",
     "bot",
     "insights",
+    "api",
 ]
 
 MIDDLEWARE = [
@@ -114,3 +122,18 @@ ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 PARSER_MODEL = env("PARSER_MODEL", default="claude-haiku-5-5")
 # Words the weekly review and answers "Ask my data" questions.
 INSIGHTS_MODEL = env("INSIGHTS_MODEL", default="claude-sonnet-5-5")
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": ["api.auth.BearerToken"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+        "rest_framework.parsers.FormParser",
+        "rest_framework.parsers.MultiPartParser",  # the "Form" body type in iOS Shortcuts
+    ],
+    "DEFAULT_THROTTLE_CLASSES": ["api.auth.TokenThrottle"],
+    "DEFAULT_THROTTLE_RATES": {"token": "120/min"},
+    "NUM_PROXIES": 1 if not DEBUG else None,  # behind Caddy in production
+    "UNAUTHENTICATED_USER": None,
+}
