@@ -39,7 +39,7 @@ services:
     command: >
       sh -c "python manage.py migrate --noinput &&
              python manage.py bootstrap &&
-             gunicorn config.wsgi --bind 0.0.0.0:8000 --worker-class gthread --workers 2 --threads 4 --timeout 120 --access-logfile -"
+             gunicorn config.wsgi --bind 0.0.0.0:8000 --worker-class gthread --workers 2 --threads 4 --timeout 120 --no-control-socket --access-logfile -"
     depends_on:
       db:
         condition: service_healthy

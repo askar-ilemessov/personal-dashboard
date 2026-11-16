@@ -1,0 +1,107 @@
+# Runs on every pull request and every push to main. Railway's "Wait for CI"
+# holds a deploy of main until this workflow passes, and skips it if it fails.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its older run. Runs on main are never
+# cancelled: Railway waits for them.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.13" # matches the Dockerfile
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+
+  test:
+    name: Tests (pytest on Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # CI-only values; nothing here is a real secret.
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+      SECRET_KEY: ci-not-a-secret
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Every model change has a migration
+        run: uv run python manage.py makemigrations --check --dry-run
+      - name: Production settings pass Django's deploy checks
+        run: uv run python manage.py check --deploy --fail-level WARNING
+        env:
+          DEBUG: "false"
+          SECRET_KEY: ci-only-but-long-enough-for-the-deploy-check-0123456789abcdefghij
+      - run: uv run pytest -q
+
+  docker:
+    name: Docker image (build and smoke test)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true # keep the image here for the smoke test; nothing is pushed
+          tags: dashboard:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Start the image the way Railway does and check it answers
+        run: |
+          app="--network host -e DEBUG=false -e SECRET_KEY=ci-not-a-secret -e DATABASE_URL=postgres://ci:ci@localhost:5432/ci"
+          docker run --rm $app dashboard:ci sh -c "python manage.py migrate --noinput && python manage.py bootstrap"
+          docker run -d --name web $app -e PORT=8080 dashboard:ci
+          for i in $(seq 30); do curl -fsS http://localhost:8080/healthz/ && break; sleep 1; done
+          curl -fsS http://localhost:8080/healthz/
+          curl -fsS -o /dev/null http://localhost:8080/login/
+      - name: Container logs
+        if: always()
+        run: docker logs web || true

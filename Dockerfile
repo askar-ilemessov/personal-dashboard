@@ -21,4 +21,5 @@ USER app
 
 EXPOSE 8000
 # Threads, and a timeout above the longest Claude call (Ask my data, weekly review).
-CMD ["gunicorn", "config.wsgi", "--bind", "0.0.0.0:8000", "--worker-class", "gthread", "--workers", "2", "--threads", "4", "--timeout", "120", "--access-logfile", "-"]
+# PORT is set by Railway; 8000 elsewhere (docker compose, Caddy).
+CMD ["sh", "-c", "exec gunicorn config.wsgi --bind 0.0.0.0:${PORT:-8000} --worker-class gthread --workers 2 --threads 4 --timeout 120 --no-control-socket --access-logfile -"]
