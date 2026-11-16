@@ -7,10 +7,12 @@ from rest_framework.throttling import SimpleRateThrottle
 MAX_FAILURES = 20  # wrong tokens per address per minute
 
 from tracking.models import ApiToken
+from tracking.owner import act_for_rest_of_request
 
 
 class TokenUser:
-    """Stands in for a user: the API is used by tokens, not by logins."""
+    """Stands in for a user: the API is used by tokens, not by logins.
+    Data is read and written as the token's owner."""
 
     is_authenticated = True
     is_anonymous = False
@@ -36,7 +38,10 @@ class BearerToken(BaseAuthentication):
         if token is None:
             self.count_failure(request)
             raise AuthenticationFailed("That token is not valid. Create a new one in Settings.")
-        ApiToken.objects.filter(pk=token.pk).update(last_used_at=timezone.now())
+        ApiToken.all_users.filter(pk=token.pk).update(last_used_at=timezone.now())
+        if not token.user.is_active:
+            raise AuthenticationFailed("That token's account is disabled.")
+        act_for_rest_of_request(token.user)
         return TokenUser(token), token
 
     @staticmethod

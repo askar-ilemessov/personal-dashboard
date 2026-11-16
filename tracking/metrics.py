@@ -20,7 +20,16 @@ from decimal import Decimal
 from django.db.models import Count, Min, Sum
 
 from . import days
-from .models import AppSettings, Budget, Entry, Expense, SleepSession, Tracker, Workout
+from .models import (
+    AppSettings,
+    Budget,
+    Entry,
+    Expense,
+    ExpenseCategory,
+    SleepSession,
+    Tracker,
+    Workout,
+)
 
 Series = dict[date, Decimal | None]
 
@@ -192,11 +201,14 @@ def get(key: str) -> Metric:
 
 
 def catalog(habits: bool = True) -> list[Metric]:
-    """Everything worth a card or a chart, in display order."""
+    """Everything worth a card or a chart, in display order. Spending is
+    left out for someone who switched off every category."""
     trackers = [for_tracker(t) for t in Tracker.objects.filter(is_active=True)]
     out = [_FIXED["sleep.duration"]]
     out += [m for m in trackers if m.kind != "habit"]
-    out += [_FIXED["exercise.minutes"], _FIXED["expenses.total"]]
+    out.append(_FIXED["exercise.minutes"])
+    if ExpenseCategory.objects.filter(is_active=True).exists():
+        out.append(_FIXED["expenses.total"])
     if habits:
         out += [m for m in trackers if m.kind == "habit"]
     return out

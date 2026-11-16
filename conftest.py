@@ -5,6 +5,7 @@ import pytest
 
 from tracking import defaults
 from tracking.models import AppSettings
+from tracking.owner import acting_as
 
 TZ = ZoneInfo("America/Toronto")
 
@@ -28,7 +29,15 @@ def fresh_cache():
 
 
 @pytest.fixture(autouse=True)
-def configured(db):
+def owner(db, django_user_model):
+    """Tests run as this account unless they switch with acting_as."""
+    user = django_user_model.objects.create_user("me", password="x")
+    with acting_as(user):
+        yield user
+
+
+@pytest.fixture(autouse=True)
+def configured(owner):
     defaults.install()
     s = AppSettings.load()
     s.timezone = "America/Toronto"

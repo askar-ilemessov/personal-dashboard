@@ -1,8 +1,10 @@
 from django.db import models
 from django.utils import timezone
 
+from tracking.owner import OwnedModel
 
-class Draft(models.Model):
+
+class Draft(OwnedModel):
     """A parsed message waiting for the user to confirm it.
 
     The preview the user approves and what gets saved must be identical, so

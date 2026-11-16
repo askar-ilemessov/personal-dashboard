@@ -19,6 +19,8 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.utils import timezone
 
+from .owner import OwnedModel
+
 
 class Source(models.TextChoices):
     WEB = "web", "Web"
@@ -33,8 +35,8 @@ def _default_timezone():
     return django_settings.APP_TIMEZONE
 
 
-class AppSettings(models.Model):
-    """Singleton (pk=1). Use AppSettings.load()."""
+class AppSettings(OwnedModel):
+    """One row per user. Use AppSettings.load() for the acting user's."""
 
     timezone = models.CharField(max_length=64, default=_default_timezone)
     day_start = models.TimeField(
@@ -46,21 +48,28 @@ class AppSettings(models.Model):
     weekly_review_enabled = models.BooleanField(default=True, help_text="Send the weekly review on Telegram")
     weekly_review_time = models.TimeField(default=time(18, 0), help_text="Sunday, local time")
     last_reminder_day = models.DateField(null=True, blank=True, editable=False)
+    # Onboarding (web/setup_views.py). Blank once finished; accounts not
+    # created by an invite never go through it.
+    setup_step = models.CharField(max_length=16, blank=True)
+    setup_deferred = models.BooleanField(default=False, help_text="Chose “Skip setup”: not sent back to it")
+    invited_by = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
 
     class Meta:
         verbose_name = verbose_name_plural = "Settings"
+        constraints = [models.UniqueConstraint(fields=["user"], name="one_settings_per_user")]
 
     def __str__(self):
         return "Settings"
 
     def save(self, *args, **kwargs):
-        self.pk = 1
         ZoneInfo(self.timezone)  # fail loudly on a bad zone name
         super().save(*args, **kwargs)
 
     @classmethod
     def load(cls):
-        obj, _ = cls.objects.get_or_create(pk=1)
+        obj, _ = cls.objects.get_or_create()
         return obj
 
     @property
@@ -68,7 +77,7 @@ class AppSettings(models.Model):
         return ZoneInfo(self.timezone)
 
 
-class Operation(models.Model):
+class Operation(OwnedModel):
     """One log action (possibly several rows). The unit of undo and audit.
 
     `changes` is a list of {"model", "pk", "action", "before"} where action is
@@ -91,7 +100,7 @@ class Operation(models.Model):
 # --- Configurable trackers -------------------------------------------------
 
 
-class Tracker(models.Model):
+class Tracker(OwnedModel):
     class Kind(models.TextChoices):
         HABIT = "habit", "Habit (done / not done)"
         COUNTER = "counter", "Counter (adds up over the day)"
@@ -102,7 +111,7 @@ class Tracker(models.Model):
         SUM = "sum", "Sum of the day's entries"
         LAST = "last", "Single value per day"
 
-    slug = models.SlugField(unique=True)
+    slug = models.SlugField()
     name = models.CharField(max_length=64)
     kind = models.CharField(max_length=16, choices=Kind.choices)
     aggregation = models.CharField(
@@ -117,6 +126,7 @@ class Tracker(models.Model):
 
     class Meta:
         ordering = ["sort_order", "name"]
+        constraints = [models.UniqueConstraint(fields=["user", "slug"], name="unique_tracker_slug")]
 
     def __str__(self):
         return self.name
@@ -130,7 +140,7 @@ class Tracker(models.Model):
         super().save(*args, **kwargs)
 
 
-class LoggedRow(models.Model):
+class LoggedRow(OwnedModel):
     day = models.DateField(db_index=True)
     source = models.CharField(max_length=16, choices=Source.choices)
     operation = models.ForeignKey(
@@ -168,8 +178,8 @@ class Entry(TimedRow):
 # --- Expenses --------------------------------------------------------------
 
 
-class ExpenseCategory(models.Model):
-    slug = models.SlugField(unique=True)
+class ExpenseCategory(OwnedModel):
+    slug = models.SlugField()
     name = models.CharField(max_length=64)
     aliases = models.JSONField(default=list, blank=True)
     is_active = models.BooleanField(default=True)
@@ -178,6 +188,7 @@ class ExpenseCategory(models.Model):
     class Meta:
         verbose_name_plural = "expense categories"
         ordering = ["sort_order", "name"]
+        constraints = [models.UniqueConstraint(fields=["user", "slug"], name="unique_category_slug")]
 
     def __str__(self):
         return self.name
@@ -187,12 +198,15 @@ class ExpenseCategory(models.Model):
         super().save(*args, **kwargs)
 
 
-class ExchangeRate(models.Model):
+class ExchangeRate(OwnedModel):
     """Manually maintained: 1 unit of `currency` = `rate` units of the default currency."""
 
-    currency = models.CharField(max_length=3, unique=True)
+    currency = models.CharField(max_length=3)
     rate = models.DecimalField(max_digits=12, decimal_places=6)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "currency"], name="unique_rate_currency")]
 
     def __str__(self):
         return f"{self.currency} × {self.rate}"
@@ -202,7 +216,7 @@ class ExchangeRate(models.Model):
         super().save(*args, **kwargs)
 
 
-class RecurringExpense(models.Model):
+class RecurringExpense(OwnedModel):
     class Frequency(models.TextChoices):
         WEEKLY = "weekly", "Weekly"
         MONTHLY = "monthly", "Monthly"
@@ -252,7 +266,7 @@ class Expense(TimedRow):
         return f"{self.day} {self.amount} {self.currency} {self.category.slug}"
 
 
-class Budget(models.Model):
+class Budget(OwnedModel):
     """Monthly budget for a category. The row with the latest effective_from
     on or before a month applies, so changing a budget keeps history."""
 
@@ -316,17 +330,18 @@ class DayNote(LoggedRow):
     note = models.TextField()
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["day"], name="one_note_per_day")]
+        constraints = [models.UniqueConstraint(fields=["user", "day"], name="one_note_per_day")]
 
     def __str__(self):
         return f"{self.day} note"
 
 
-class Tag(models.Model):
-    slug = models.SlugField(unique=True)
+class Tag(OwnedModel):
+    slug = models.SlugField()
 
     class Meta:
         ordering = ["slug"]
+        constraints = [models.UniqueConstraint(fields=["user", "slug"], name="unique_tag_slug")]
 
     def __str__(self):
         return self.slug
@@ -345,7 +360,7 @@ class DayTag(LoggedRow):
 # --- Goals, tokens ---------------------------------------------------------
 
 
-class Goal(models.Model):
+class Goal(OwnedModel):
     """A limit or target on a metric key (see tracking.metrics), e.g.
     tracker:coffee <= 2 per day, sleep.duration >= 420 per day,
     exercise.sessions >= 4 per week. Category budgets live in Budget."""
@@ -379,7 +394,7 @@ class Goal(models.Model):
         return value <= self.target if self.comparator == self.Comparator.AT_MOST else value >= self.target
 
 
-class ApiToken(models.Model):
+class ApiToken(OwnedModel):
     """Bearer token for the iOS Shortcuts endpoint. Only the SHA-256 is stored."""
 
     name = models.CharField(max_length=64)
@@ -403,4 +418,4 @@ class ApiToken(models.Model):
 
     @classmethod
     def lookup(cls, raw: str) -> "ApiToken | None":
-        return cls.objects.filter(token_hash=cls.digest(raw), is_active=True).first()
+        return cls.all_users.filter(token_hash=cls.digest(raw), is_active=True).select_related("user").first()

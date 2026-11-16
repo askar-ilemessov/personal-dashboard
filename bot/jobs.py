@@ -1,14 +1,19 @@
 """Scheduled jobs. `run_due()` is called every minute by the bot and returns
-the messages to send; each job records that it ran, so nothing is sent twice."""
+the messages to send; each job records that it ran, so nothing is sent twice.
+
+Recurring expenses are materialised for every account. Reminders and the
+weekly review go out on Telegram, so only the bot's account gets them."""
 
 from datetime import datetime
 
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from insights import review
 from insights.models import WeeklyReview
 from tracking import days, logbook
 from tracking.models import AppSettings
+from tracking.owner import acting_as
 
 from . import replies
 
@@ -51,6 +56,10 @@ def weekly_review(now: datetime | None = None) -> replies.Reply | None:
     return reply
 
 
-def run_due(now: datetime | None = None) -> list[replies.Reply]:
-    logbook.materialize_recurring()
-    return [r for r in (evening_reminder(now), weekly_review(now)) if r]
+def run_due(account, now: datetime | None = None) -> list[replies.Reply]:
+    """Messages for `account`, the user the bot serves."""
+    for user in get_user_model().objects.filter(is_active=True):
+        with acting_as(user):
+            logbook.materialize_recurring()
+    with acting_as(account):
+        return [r for r in (evening_reminder(now), weekly_review(now)) if r]

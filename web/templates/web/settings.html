@@ -12,6 +12,13 @@
     </label>
     <label>Day starts at <input type="time" name="day_start" value="{{ settings.day_start|time:'H:i' }}" required>
       <span class="hint">Anything logged before this counts for the previous day.</span></label>
+    {% if currency_locked %}
+    <label>Main currency <strong>{{ settings.default_currency }}</strong>
+      <span class="hint">Fixed now that spending is logged, because past amounts are stored in it.</span></label>
+    {% else %}
+    <label>Main currency <select name="currency">{% for c in currencies %}<option{% if c == settings.default_currency %} selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+      <span class="hint">Can't be changed once you log spending.</span></label>
+    {% endif %}
     <label class="check"><input type="checkbox" name="reminder_enabled"{% if settings.reminder_enabled %} checked{% endif %}> Evening reminder on Telegram at
       <input type="time" name="reminder_time" value="{{ settings.reminder_time|time:'H:i' }}" required aria-label="Reminder time"></label>
     <label class="check"><input type="checkbox" name="weekly_review_enabled"{% if settings.weekly_review_enabled %} checked{% endif %}> Weekly review on Telegram, Sunday at
@@ -109,7 +116,36 @@
 </section>
 
 <section class="panel">
+  <h2>Account</h2>
+  <p style="margin-top: 0">Signed in as <strong>{{ user.username }}</strong>. <a href="{% url 'password_change' %}">Change password</a></p>
+</section>
+
+{% if user.is_superuser %}
+<section class="panel">
+  <h2>People</h2>
+  <p class="hint" style="margin-top: 0">Each account has its own trackers, categories, goals and data. Nobody else can see yours.</p>
+  <table class="table">
+    <tbody>
+    {% for person in people %}
+      <tr><td>{{ person.username }}</td>
+        <td class="muted">{% if not person.has_usable_password %}invited, hasn't signed in yet{% elif person.last_login %}last signed in {{ person.last_login|timesince }} ago{% else %}never signed in{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div id="new-invite"></div>
+  <form class="add-form" hx-post="{% url 'web:invite' %}" hx-target="#new-invite" hx-swap="innerHTML" hx-on::after-request="this.reset()">
+    <strong>Invite someone</strong>
+    <label class="grow">Username <input name="username" autocomplete="off" required></label>
+    <button class="btn">Create link</button>
+  </form>
+  <p class="hint">Entering an existing username makes a password reset link for them.</p>
+</section>
+{% endif %}
+
+{% if user.is_staff %}
+<section class="panel">
   <h2>More in the admin</h2>
   <ul class="link-list" hx-boost="false">{% for label, url in links %}<li><a href="{{ url }}">{{ label }}</a></li>{% endfor %}</ul>
 </section>
+{% endif %}
 {% endblock %}

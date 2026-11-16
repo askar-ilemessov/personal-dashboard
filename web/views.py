@@ -211,7 +211,19 @@ def today(request):
         "sleep_missing": not SleepSession.objects.filter(day=day, wake_time__isnull=False).exists(),
         "goals": [g for g in (metrics.goal_progress(g, day) for g in Goal.objects.filter(is_active=True)) if g],
         "budgets": metrics.budgets(day), "flags": _flags(day)[:3],
+        "first_steps": _first_steps(s, first),
     })
+
+
+def _first_steps(s, first) -> dict | None:
+    """The getting-started card: shown until setup is finished and
+    something has been logged."""
+    if first is not None and not s.setup_step:
+        return None
+    from .setup_views import examples
+
+    return {"name": s.user.first_name, "setup": s.setup_step, "logged": first is not None,
+            "example": examples()[0]}
 
 
 def day_view(request, day):

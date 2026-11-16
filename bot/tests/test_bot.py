@@ -50,11 +50,11 @@ class FakeSession(BaseSession):
 class Chatter:
     """Sends messages and presses buttons as a given user."""
 
-    def __init__(self):
+    def __init__(self, account):
         self.session = FakeSession()
         self.session.incoming = {}
         self.bot = Bot("4242:TEST", session=self.session, default=DefaultBotProperties(parse_mode="HTML"))
-        self.dispatcher = build_dispatcher(OWNER)
+        self.dispatcher = build_dispatcher(OWNER, account)
         self.n = 0
 
     async def say(self, text, user=OWNER):
@@ -91,12 +91,12 @@ def buttons(message_or_call):
 
 
 @pytest.fixture
-def chat(transactional_db):
+def chat(transactional_db, owner):
     defaults.install()
     s = AppSettings.load()
     s.timezone = "America/Toronto"
     s.save()
-    return Chatter()
+    return Chatter(owner)
 
 
 pytestmark = pytest.mark.django_db(transaction=True)

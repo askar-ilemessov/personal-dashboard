@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import settings_views, views
+from . import settings_views, setup_views, views
 
 app_name = "web"
 
@@ -26,6 +26,9 @@ urlpatterns = [
     path("settings/trackers/<int:pk>/toggle/", settings_views.tracker_toggle, name="tracker_toggle"),
     path("settings/tokens/", settings_views.token_add, name="token_add"),
     path("settings/tokens/<int:pk>/revoke/", settings_views.token_revoke, name="token_revoke"),
+    path("settings/invite/", settings_views.invite, name="invite"),
+    path("setup/", setup_views.start, name="setup_start"),
+    path("setup/<str:name>/", setup_views.step, name="setup"),
     path("t/<slug:slug>/", views.tracker_detail, name="tracker"),
     path("log/", views.log, name="log"),
     path("palette/parse/", views.palette_parse, name="palette_parse"),

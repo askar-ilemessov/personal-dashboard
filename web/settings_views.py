@@ -7,6 +7,9 @@ from datetime import time
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo, available_timezones
 
+from django.conf import settings as django_settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.decorators import user_passes_test
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.text import slugify
@@ -14,8 +17,18 @@ from django.views.decorators.http import require_POST
 
 from parsing.grammar import parse_duration
 from tracking import days, fmt, metrics
-from tracking.models import ApiToken, AppSettings, Budget, ExpenseCategory, Goal, Tracker
+from tracking.models import (
+    ApiToken,
+    AppSettings,
+    Budget,
+    Expense,
+    ExpenseCategory,
+    Goal,
+    RecurringExpense,
+    Tracker,
+)
 
+from . import invites
 from .views import _error, _events
 
 ADMIN_LINKS = [
@@ -26,8 +39,17 @@ ADMIN_LINKS = [
 ]
 
 
+CURRENCIES = ["CAD", "USD", "EUR", "GBP", "AUD", "NZD", "CHF", "JPY", "MXN", "INR"]
+
+
 class Invalid(ValueError):
     pass
+
+
+def currency_locked() -> bool:
+    """Expenses keep their amount converted at logging time, so the main
+    currency can't change once there are any."""
+    return Expense.objects.exists() or RecurringExpense.objects.exists()
 
 
 def _goal_metrics() -> list[metrics.Metric]:
@@ -58,12 +80,15 @@ def page(request):
         goals.append({"goal": g, "metric": m, "target": fmt.value(m.fmt, g.target) if m else g.target})
     return render(request, "web/settings.html", {
         "nav": "settings", "settings": s, "timezones": sorted(available_timezones()),
+        "currencies": CURRENCIES, "currency_locked": currency_locked(),
         "goals": goals, "goal_metrics": _goal_metrics(),
         "budget_rows": [{"category": c, "amount": current.get(c.pk)} for c in ExpenseCategory.objects.filter(is_active=True)],
         "trackers": Tracker.objects.all(), "kinds": Tracker.Kind.choices,
         "tokens": ApiToken.objects.filter(is_active=True).order_by("-created_at"),
         "api_url": request.build_absolute_uri(reverse("api:log")),
         "links": [(label, reverse(name)) for label, name in ADMIN_LINKS],
+        "people": get_user_model().objects.filter(is_active=True).order_by("username")
+        if request.user.is_superuser else [],
     })
 
 
@@ -80,6 +105,12 @@ def general(request):
         s.day_start = _time(p.get("day_start"), "Day start")
         s.reminder_time = _time(p.get("reminder_time"), "Reminder time")
         s.weekly_review_time = _time(p.get("weekly_review_time"), "Review time")
+        if p.get("currency") and p["currency"] != s.default_currency:
+            if currency_locked():
+                raise Invalid("The main currency can't change once you've logged spending.")
+            if p["currency"] not in CURRENCIES:
+                raise Invalid("Pick a currency from the list.")
+            s.default_currency = p["currency"]
     except Invalid as e:
         return _error(e)
     s.reminder_enabled = p.get("reminder_enabled") == "on"
@@ -139,20 +170,34 @@ def goal_change(request, pk, action):
 
 @require_POST
 def budgets(request):
-    """One amount per category. A change takes effect from this month and
-    earlier months keep the budget they had."""
-    month = days.today().replace(day=1)
-    changes = []
-    for category in ExpenseCategory.objects.filter(is_active=True):
-        text = request.POST.get(f"budget-{category.pk}", "").strip().replace("$", "").replace(",", "")
+    try:
+        amounts = budget_amounts(request.POST, ExpenseCategory.objects.filter(is_active=True))
+    except Invalid as e:
+        return _error(e)
+    save_budgets(amounts)
+    return _saved("Budgets saved.")
+
+
+def budget_amounts(post, categories) -> list:
+    """[(category, amount or None)] from the `budget-<pk>` fields."""
+    out = []
+    for category in categories:
+        text = post.get(f"budget-{category.pk}", "").strip().replace("$", "").replace(",", "")
         try:
             amount = Decimal(text) if text else None
         except InvalidOperation:
-            return _error(f"The budget for {category.name} isn't a number.")
+            raise Invalid(f"The budget for {category.name} isn't a number.") from None
         if amount is not None and (amount < 0 or not amount.is_finite()):
-            return _error(f"The budget for {category.name} can't be negative.")
-        changes.append((category, amount))
-    for category, amount in changes:
+            raise Invalid(f"The budget for {category.name} can't be negative.")
+        out.append((category, amount))
+    return out
+
+
+def save_budgets(amounts):
+    """One amount per category. A change takes effect from this month and
+    earlier months keep the budget they had."""
+    month = days.today().replace(day=1)
+    for category, amount in amounts:
         latest = Budget.objects.filter(category=category, effective_from__lte=month).order_by("-effective_from").first()
         if not amount:
             # Blank or 0 ends the budget from this month on. A zero row records
@@ -162,39 +207,42 @@ def budgets(request):
                                                 defaults={"monthly_amount": Decimal(0)})
         elif latest is None or latest.monthly_amount != amount:
             Budget.objects.update_or_create(category=category, effective_from=month, defaults={"monthly_amount": amount})
-    return _saved("Budgets saved.")
 
 
 @require_POST
 def tracker_add(request):
-    p = request.POST
-    name, kind = p.get("name", "").strip(), p.get("kind")
-    slug = slugify(p.get("slug", "").strip() or name)
     try:
-        if not name or not slug:
-            raise Invalid("Give the tracker a name.")
-        if kind not in Tracker.Kind.values:
-            raise Invalid("Pick a kind.")
-        if Tracker.objects.filter(slug=slug).exists():
-            raise Invalid(f"There is already a tracker called “{slug}”.")
-        lo = hi = None
-        if kind == Tracker.Kind.SCALE:
-            try:
-                lo, hi = Decimal(p.get("min") or "1"), Decimal(p.get("max") or "5")
-            except InvalidOperation:
-                raise Invalid("The scale's lowest and highest values must be numbers.") from None
-            if lo >= hi:
-                raise Invalid("The scale's highest value must be above its lowest.")
-        elif kind == Tracker.Kind.DURATION:
-            lo, hi = Decimal(0), Decimal(1440)
+        tracker = create_tracker(request.POST)
     except Invalid as e:
         return _error(e)
-    Tracker.objects.create(
+    return _saved(f"Tracker added: {tracker.name}. Log it with “{tracker.slug}” in the palette or /{tracker.slug} in Telegram.")
+
+
+def create_tracker(p) -> Tracker:
+    """From name, kind and optional slug, unit, aliases, min, max. Raises Invalid."""
+    name, kind = p.get("name", "").strip(), p.get("kind")
+    slug = slugify(p.get("slug", "").strip() or name)
+    if not name or not slug:
+        raise Invalid("Give the tracker a name.")
+    if kind not in Tracker.Kind.values:
+        raise Invalid("Pick a kind.")
+    if Tracker.objects.filter(slug=slug).exists():
+        raise Invalid(f"There is already a tracker called “{slug}”.")
+    lo = hi = None
+    if kind == Tracker.Kind.SCALE:
+        try:
+            lo, hi = Decimal(p.get("min") or "1"), Decimal(p.get("max") or "5")
+        except InvalidOperation:
+            raise Invalid("The scale's lowest and highest values must be numbers.") from None
+        if lo >= hi:
+            raise Invalid("The scale's highest value must be above its lowest.")
+    elif kind == Tracker.Kind.DURATION:
+        lo, hi = Decimal(0), Decimal(1440)
+    return Tracker.objects.create(
         slug=slug, name=name, kind=kind, unit="min" if kind == Tracker.Kind.DURATION else p.get("unit", "").strip(),
         min_value=lo, max_value=hi, aliases=[a for a in p.get("aliases", "").split(",") if a.strip()],
         sort_order=Tracker.objects.count(),
     )
-    return _saved(f"Tracker added: {name}. Log it with “{slug}” in the palette or /{slug} in Telegram.")
 
 
 @require_POST
@@ -219,3 +267,16 @@ def token_add(request):
 def token_revoke(request, pk):
     get_object_or_404(ApiToken, pk=pk).delete()
     return _saved("Token revoked. Anything using it will stop working.")
+
+
+@require_POST
+@user_passes_test(lambda u: u.is_superuser)
+def invite(request):
+    try:
+        user, created = invites.invite(request.POST.get("username", ""), invited_by=request.user)
+    except invites.InviteError as e:
+        return _error(e)
+    return render(request, "web/partials/invite_link.html", {
+        "invitee": user, "created": created, "link": request.build_absolute_uri(invites.path(user)),
+        "days": django_settings.PASSWORD_RESET_TIMEOUT // 86400,
+    })

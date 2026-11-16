@@ -10,6 +10,7 @@ way to check the prompt after changing it or the model.
 from django.core.management.base import BaseCommand, CommandError
 
 from parsing import parser
+from tracking.owner import account_for_command, acting_as
 
 # (sentence, text that must appear in the preview lines)
 CASES = [
@@ -35,8 +36,13 @@ class Command(BaseCommand):
     def add_arguments(self, parser_):
         parser_.add_argument("text", nargs="?")
         parser_.add_argument("--eval", action="store_true", help="Run the built-in sentences through Claude")
+        parser_.add_argument("--user", help="Whose trackers and categories to use (default: the only account)")
 
     def handle(self, *args, **options):
+        with acting_as(account_for_command(options["user"])):
+            self.run(options)
+
+    def run(self, options):
         if options["eval"]:
             return self.evaluate()
         if not options["text"]:

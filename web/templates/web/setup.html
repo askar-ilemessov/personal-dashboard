@@ -1,0 +1,122 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setup · Dashboard</title>
+  <script>(function () { try { var t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {} })();</script>
+  <link rel="stylesheet" href="{% static 'web/app.css' %}">
+  <script defer src="{% static 'web/vendor/htmx.min.js' %}"></script>
+</head>
+<body class="setup" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+{# An explicit action, so a #fragment from "Add" doesn't follow every later redirect. #}
+<form method="post" action="{% url 'web:setup' step %}" class="setup-page">{% csrf_token %}
+  {# First submit button, so Enter in a field means Continue, not Skip setup. #}
+  <button class="setup-default" name="action" value="continue" tabindex="-1" aria-hidden="true"></button>
+  <header class="setup-head">
+    <span class="brand">Dashboard</span>
+    <span class="setup-progress" aria-label="Step {{ number }} of {{ total }}">{% for on in bars %}<i{% if on %} class="on"{% endif %}></i>{% endfor %}<span>{{ number }} of {{ total }}</span></span>
+  </header>
+
+  <main class="setup-body">
+  {% if step == "about" %}
+    <header><h1>About you</h1><p class="hint">A few basics so days and amounts come out right. You can change these later in Settings.</p></header>
+    {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
+    <div class="setup-fields">
+      <label>What should we call you? <input name="name" value="{{ user.first_name }}" autocomplete="given-name" autofocus></label>
+      <label>Timezone
+        <input name="timezone" id="timezone" value="{{ settings.timezone }}" list="timezones" autocomplete="off" required{% if detect_timezone %} data-detect{% endif %}>
+        <datalist id="timezones">{% for z in timezones %}<option value="{{ z }}">{% endfor %}</datalist>
+        <span class="hint" id="timezone-hint">Where you are most of the time.</span></label>
+      <label>Day starts at <input type="time" name="day_start" value="{{ settings.day_start|time:'H:i' }}" required>
+        <span class="hint">Anything before this counts for the previous day.</span></label>
+      <label>Main currency
+        {% if locked %}<strong>{{ settings.default_currency }}</strong>
+        <span class="hint">Fixed now that spending is logged.</span>
+        {% else %}<select name="currency">{% for c in currencies %}<option{% if c == settings.default_currency %} selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+        <span class="hint">Totals and budgets use this. It can't change once you log spending.</span>{% endif %}</label>
+    </div>
+    <script>
+      (function () {
+        var input = document.getElementById("timezone");
+        if (!input.hasAttribute("data-detect")) return;
+        try {
+          var zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          if (zone) { input.value = zone; document.getElementById("timezone-hint").textContent = "Detected from this browser."; }
+        } catch (e) {}
+      })();
+    </script>
+
+  {% elif step == "track" %}
+    <header><h1>What do you want to track?</h1><p class="hint">Pick a few to start. Fewer is easier to keep up; you can add more any time in Settings. Sleep, exercise and spending are always there.</p></header>
+    {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
+    {% for label, note, trackers in groups %}{% if trackers %}
+    <fieldset class="setup-group"><legend>{{ label }} <span class="hint">· {{ note }}</span></legend>
+      <div class="setup-options">{% for t in trackers %}
+        <label class="setup-option" id="tracker-{{ t.slug }}"><input type="checkbox" name="tracker" value="{{ t.slug }}"{% if t.is_active %} checked{% endif %}>
+          <span>{{ t.name }}{% if t.unit or t.kind == "scale" %}<small>{% if t.kind == "scale" %}{{ t.min_value|floatformat:"0" }}–{{ t.max_value|floatformat:"0" }}{% else %}{{ t.unit }}{% endif %}</small>{% endif %}</span></label>
+      {% endfor %}</div>
+    </fieldset>
+    {% endif %}{% endfor %}
+    <fieldset class="setup-group"><legend>Add your own</legend>
+      <div class="setup-add">
+        <input name="name" placeholder="e.g. Water" aria-label="Tracker name" autocomplete="off">
+        <select name="kind" aria-label="Kind">{% for value, label in kinds %}<option value="{{ value }}"{% if value == "counter" %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        <button class="btn" name="action" value="add" id="add-tracker" formnovalidate>Add</button>
+      </div>
+    </fieldset>
+    <script>
+      document.querySelector("[aria-label='Tracker name']").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); document.getElementById("add-tracker").click(); }
+      });
+    </script>
+
+  {% elif step == "spending" %}
+    <header><h1>Spending</h1><p class="hint">Categories for what you spend, with an optional monthly budget in {{ settings.default_currency }}.</p></header>
+    {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
+    <label class="setup-option setup-toggle"><input type="checkbox" name="spending" id="spending"{% if spending %} checked{% endif %}> I want to track spending</label>
+    <div class="setup-options" id="categories">{% for row in categories %}
+      <label class="setup-option"><input type="checkbox" name="category" value="{{ row.category.slug }}"{% if row.category.is_active %} checked{% endif %}>
+        <span>{{ row.category.name }}</span>
+        <input class="setup-budget" name="budget-{{ row.category.pk }}" inputmode="decimal" placeholder="no budget" aria-label="{{ row.category.name }} budget" value="{% if row.budget %}{{ row.budget|floatformat:'-2' }}{% endif %}" autocomplete="off"></label>
+    {% endfor %}</div>
+    <p class="hint">Blank means no budget. Budgets are monthly and start this month.</p>
+    <script>
+      (function () {
+        var toggle = document.getElementById("spending"), list = document.getElementById("categories");
+        function sync() { list.classList.toggle("off", !toggle.checked); list.querySelectorAll("input").forEach(function (i) { i.disabled = !toggle.checked; }); }
+        toggle.addEventListener("change", sync); sync();
+      })();
+    </script>
+
+  {% elif step == "goals" %}
+    <header><h1>Any goals?</h1><p class="hint">Optional. A goal turns a number into a yes or no each day or week, and shows as progress on Today. Change targets later in Settings.</p></header>
+    {% if error %}<p class="form-error" role="alert">{{ error }}</p>{% endif %}
+    <div class="setup-options setup-wide">{% for g in goals %}
+      <label class="setup-option"><input type="checkbox" name="goal" value="{{ g.key }}"{% if g.ticked %} checked{% endif %}><span>{{ g.name }}</span></label>
+    {% empty %}<p class="hint">No suggestions for what you picked. You can add goals later in Settings.</p>{% endfor %}</div>
+
+  {% else %}
+    <header><h1>How to log</h1><p class="hint">Everything below logs to your account only.</p></header>
+    <div class="setup-ways">
+      <div class="setup-way"><span class="setup-icon">⌘K</span><div><strong>Quick log, from any page</strong>
+        <p class="hint">Press <kbd>⌘K</kbd> (or the Quick log button) and type what happened. For example:</p>
+        <p class="setup-examples">{% for e in examples %}<code>{{ e }}</code>{% endfor %}</p></div></div>
+      <div class="setup-way"><span class="setup-icon">iOS</span><div><strong>iPhone Shortcuts</strong>
+        <p class="hint">Log from the home screen or by voice. A Shortcut needs a token; you can also make one later in Settings.</p>
+        <div id="new-token" class="setup-token">{% if has_token %}<p class="hint">You already have a token.</p>{% else %}
+          <button type="button" class="btn" hx-post="{% url 'web:token_add' %}" hx-vals='{"name": "iPhone Shortcuts"}' hx-target="#new-token">Create a token</button>{% endif %}</div></div></div>
+      <div class="setup-way"><span class="setup-icon">↩</span><div><strong>Every entry can be undone</strong>
+        <p class="hint">After each entry a message with Undo appears, and every table can be edited in place.</p></div></div>
+    </div>
+  {% endif %}
+  </main>
+
+  <footer class="setup-foot">
+    <div>{% if previous %}<a class="btn quiet" href="{% url 'web:setup' previous %}">Back</a>
+      {% else %}<button class="btn quiet" name="action" value="later" formnovalidate>Skip setup</button>{% endif %}</div>
+    <div>{% if not last %}<button class="btn quiet" name="action" value="skip" formnovalidate>Skip</button>{% endif %}
+      <button class="btn primary" name="action" value="continue">{% if last %}Go to Today{% else %}Continue{% endif %}</button></div>
+  </footer>
+</form>
+</body>
+</html>

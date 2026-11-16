@@ -35,8 +35,8 @@ def test_requests_without_a_valid_token_are_refused(token, headers):
     assert not Entry.objects.exists()
 
 
-def test_a_browser_session_is_not_enough(client, django_user_model):
-    client.force_login(django_user_model.objects.create_user("me"))
+def test_a_browser_session_is_not_enough(client, owner):
+    client.force_login(owner)
     assert post(client, "/api/v1/log", {"text": "coffee"}).status_code == 401
 
 

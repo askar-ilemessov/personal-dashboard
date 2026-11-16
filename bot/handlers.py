@@ -8,6 +8,8 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from asgiref.sync import sync_to_async
 
+from tracking.owner import acting_as
+
 from . import replies
 
 log = logging.getLogger(__name__)
@@ -26,17 +28,20 @@ COMMANDS = [
 
 
 class OwnerOnly(BaseMiddleware):
-    """Single-user bot: updates from anyone else are dropped without a reply."""
+    """Single-user bot: updates from anyone else are dropped without a reply.
+    The owner's messages are logged to `account` (see tracking.owner)."""
 
-    def __init__(self, user_id: int):
+    def __init__(self, user_id: int, account):
         self.user_id = user_id
+        self.account = account
 
     async def __call__(self, handler, event, data):
         user = data.get("event_from_user")
         if user is None or user.id != self.user_id:
             log.warning("Ignored update from user %s", getattr(user, "id", None))
             return None
-        return await handler(event, data)
+        with acting_as(self.account):  # sync_to_async copies the context into its thread
+            return await handler(event, data)
 
 
 def _markup(reply: replies.Reply) -> InlineKeyboardMarkup | None:
@@ -143,8 +148,8 @@ def build_router() -> Router:
     return router
 
 
-def build_dispatcher(owner_id: int) -> Dispatcher:
+def build_dispatcher(owner_id: int, account) -> Dispatcher:
     dispatcher = Dispatcher()
-    dispatcher.update.outer_middleware(OwnerOnly(owner_id))
+    dispatcher.update.outer_middleware(OwnerOnly(owner_id, account))
     dispatcher.include_router(build_router())
     return dispatcher

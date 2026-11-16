@@ -1,29 +1,35 @@
 # Personal dashboard
 
-Single-user life tracker: web app, Telegram bot, one shared logging service. Conventions and decisions are in [CLAUDE.md](CLAUDE.md).
+Life tracker for you and a few invited people: web app, Telegram bot, one shared logging service. Each account has its own trackers, categories, goals and data. Conventions and decisions are in [CLAUDE.md](CLAUDE.md).
 
 ## Run locally
 
 ```bash
 cp .env.example .env            # set SECRET_KEY
 uv run python manage.py migrate
-uv run python manage.py bootstrap          # default trackers, categories, goals
-uv run python manage.py createsuperuser
+uv run python manage.py createsuperuser    # gets its own default trackers, categories, goals
 uv run python manage.py runserver
 ```
 
-Optional: `uv run python manage.py seed --reset` fills 90 days of fake data (it deletes all logged data first).
+Optional: `uv run python manage.py seed --user <username> --reset` fills 90 days of fake data for one account (it deletes that account's logged data first).
+
+## Inviting people
+
+Accounts are invite-only. As a superuser, open Settings → People, enter a username and send the person the link it shows; they choose their own password, are signed in, and go through a short setup (their timezone and currency, what to track, spending categories and budgets, goals, and how to log). Invited accounts start with only Coffee, Mood and Energy switched on. The link works once and expires after 3 days. Entering an existing username gives a password reset link instead. From the command line: `manage.py invite <username> --base-url https://your.domain`.
+
+Everyone shares the server's Claude API key, so the palette, weekly reviews and Ask my data cost the same per person as they do for you.
 
 ## Telegram bot
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) and copy its token into `TELEGRAM_BOT_TOKEN`.
 2. Message [@userinfobot](https://t.me/userinfobot) to get your numeric ID and put it in `TELEGRAM_USER_ID`. The bot ignores everyone else.
-3. `uv run python manage.py runbot`, then send `/help` to your bot.
+3. Put your app username in `TELEGRAM_ACCOUNT`: what you send the bot is logged to that account, and reminders and the weekly review are for it. (The bot serves one person; other accounts use the web app and Shortcuts.)
+4. `uv run python manage.py runbot`, then send `/help` to your bot.
 
 ## Deploy (VPS with Docker)
 
 1. Point a DNS A record for your domain at the server and open ports 80 and 443.
-2. Copy the repository to the server and create `.env` from `.env.example`. Set `SECRET_KEY`, `DOMAIN`, `POSTGRES_PASSWORD`, `APP_TIMEZONE`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_USER_ID`.
+2. Copy the repository to the server and create `.env` from `.env.example`. Set `SECRET_KEY`, `DOMAIN`, `POSTGRES_PASSWORD`, `APP_TIMEZONE`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_USER_ID` and `TELEGRAM_ACCOUNT` (the username you create next).
 3. Start it and create your login:
 
 ```bash

@@ -1,0 +1,5 @@
+<div class="new-token" role="status">
+  <strong>{% if created %}Invite for {{ invitee.username }}{% else %}Password reset link for {{ invitee.username }}{% endif %}</strong>
+  <p>Send them this link. It works once, for {{ days }} days, and lets them choose {% if created %}a{% else %}a new{% endif %} password.</p>
+  <input readonly value="{{ link }}" aria-label="Invite link" onfocus="this.select()">
+</div>

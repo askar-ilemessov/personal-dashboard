@@ -3,7 +3,6 @@ from datetime import timedelta
 from decimal import Decimal
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.urls import reverse
 
@@ -12,8 +11,8 @@ from tracking.models import DayNote, DayTag, Entry, Expense, SleepSession, Worko
 
 
 @pytest.fixture
-def client(client):
-    client.force_login(get_user_model().objects.create_user("me", password="x"))
+def client(client, owner):
+    client.force_login(owner)
     return client
 
 

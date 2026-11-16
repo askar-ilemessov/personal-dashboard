@@ -31,6 +31,7 @@ from tracking.models import (
     Tag,
     Workout,
 )
+from tracking.owner import account_for_command, acting_as
 
 HABITS = {"vitamins": 0.85, "read": 0.6, "stretch": 0.5, "meditate": 0.45}
 WORKOUT_PLAN = {0: "push", 1: "pull", 3: "legs", 5: "cardio"}  # weekday -> type
@@ -58,13 +59,18 @@ class Command(BaseCommand):
     help = "Seed N days of realistic fake data (default 90)."
 
     def add_arguments(self, parser):
+        parser.add_argument("--user", help="Username to seed (default: the only account, if there is one)")
         parser.add_argument("--days", type=int, default=90)
         parser.add_argument("--seed", type=int, default=42, help="Random seed, for reproducible data")
-        parser.add_argument("--reset", action="store_true", help="Delete ALL logged data first")
+        parser.add_argument("--reset", action="store_true", help="Delete ALL of this user's logged data first")
         parser.add_argument("--force", action="store_true", help="Allow --reset when DEBUG is off")
 
-    @transaction.atomic
     def handle(self, *args, **opts):
+        with acting_as(account_for_command(opts["user"])):
+            self._seed(opts)
+
+    @transaction.atomic
+    def _seed(self, opts):
         if opts["reset"]:
             if not django_settings.DEBUG and not opts["force"]:
                 raise CommandError("Refusing to --reset with DEBUG off. Pass --force if you mean it.")
@@ -103,7 +109,7 @@ class Command(BaseCommand):
         logbook.materialize_recurring(today)
 
         self.stdout.write(self.style.SUCCESS(
-            f"Seeded {n} days: {Entry.objects.count()} entries, {Expense.objects.count()} expenses, "
+            f"Seeded {n} days for {self.settings.user}: {Entry.objects.count()} entries, {Expense.objects.count()} expenses, "
             f"{SleepSession.objects.count()} nights, {Workout.objects.count()} workouts."
         ))
 

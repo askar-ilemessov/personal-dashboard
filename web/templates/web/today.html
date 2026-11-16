@@ -9,6 +9,19 @@
   </div>
 </header>
 
+{% if first_steps %}
+<section class="panel first-steps">
+  <h2>{% if first_steps.name %}Welcome, {{ first_steps.name }}{% else %}First steps{% endif %}</h2>
+  <ol>
+    {% if first_steps.setup %}<li><a href="{% url 'web:setup' first_steps.setup %}">Finish setting up</a> <span class="muted">· pick what to track, budgets and goals</span></li>
+    {% else %}<li class="done">Set up your account</li>{% endif %}
+    <li{% if first_steps.logged %} class="done"{% endif %}>Log something: press <kbd>⌘K</kbd> and type <code>{{ first_steps.example }}</code></li>
+    <li>Tonight, log when you go to bed: <code>slept 23:30</code></li>
+    <li>Come back after a week for your first <a href="{% url 'web:insights' %}">weekly review</a></li>
+  </ol>
+</section>
+{% endif %}
+
 {% if unlogged or sleep_missing %}
 <section class="panel">
   <h2>Still unlogged today</h2>
