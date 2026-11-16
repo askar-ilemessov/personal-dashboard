@@ -51,6 +51,7 @@ jobs:
       # CI-only values; nothing here is a real secret.
       DATABASE_URL: postgres://ci:ci@localhost:5432/ci
       SECRET_KEY: ci-not-a-secret
+      DEBUG: "true" # as in local development: plain static files, no collectstatic needed
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3 # exact: this action has no moving v10 tag
