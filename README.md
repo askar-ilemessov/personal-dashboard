@@ -26,6 +26,47 @@ Everyone shares the server's Claude API key, so the palette, weekly reviews and 
 3. Put your app username in `TELEGRAM_ACCOUNT`: what you send the bot is logged to that account, and reminders and the weekly review are for it. (The bot serves one person; other accounts use the web app and Shortcuts.)
 4. `uv run python manage.py runbot`, then send `/help` to your bot.
 
+## Checks (CI)
+
+Every pull request and every push to `main` runs `.github/workflows/ci.yml` on GitHub Actions:
+
+- **Lint:** `ruff check`.
+- **Tests:** `makemigrations --check` (no model change without a migration), `check --deploy` with production settings, and the full test suite on Postgres 17, the same database as production.
+- **Docker image:** builds the image, runs migrations from it and starts it the way Railway does, then calls `/healthz/` and `/login/`.
+
+Run the same checks locally before pushing: `uv run ruff check . && uv run pytest -q`.
+
+## Deploy on Railway
+
+The web app runs on [Railway](https://railway.com) from this repository's Dockerfile, with Railway's Postgres. Railway provides HTTPS and the `*.up.railway.app` address, so Caddy and the backup container from `docker-compose.yml` are not used there. Every push to `main` deploys once CI has passed.
+
+**One-time setup**
+
+1. In Railway, create a project → **Deploy from GitHub repo** → `personal-dashboard`. Railway finds the Dockerfile. Then add a database: **+ Create → Database → PostgreSQL**.
+2. On the app service, open **Variables** and add:
+   - `SECRET_KEY`: a long random value (`python -c "import secrets; print(secrets.token_urlsafe(50))"`)
+   - `DEBUG` = `false`
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}` (a reference: Railway fills in the private address)
+   - `PORT` = `8080`
+   - `APP_TIMEZONE`, e.g. `America/Toronto`
+   - `ANTHROPIC_API_KEY` (optional; without it only the quick-log grammar works)
+3. Under **Settings**:
+   - **Networking → Generate Domain**, target port `8080`. The app picks this domain up by itself (`RAILWAY_PUBLIC_DOMAIN`); set `DOMAIN` only for a custom domain.
+   - **Deploy → Pre-deploy command:** `python manage.py migrate --noinput && python manage.py bootstrap`. It runs before each new version starts; if a migration fails, the old version keeps running.
+   - **Deploy → Healthcheck path:** `/healthz/`. A new version only receives traffic once this answers.
+   - **Source → Wait for CI:** on. A push to `main` then deploys only after the CI workflow passes, and is skipped if it fails.
+4. Deploy (or redeploy if the first deploy ran before the domain existed), then create your login from a shell on the service. With the [Railway CLI](https://docs.railway.com/guides/cli): `railway link`, then `railway ssh`, then `python manage.py createsuperuser`.
+5. Invite people from Settings → People.
+
+**Changing things later:** open a pull request, let the checks pass, merge. Railway builds the merged commit, runs the migrations, waits for `/healthz/` and switches over. To go back, redeploy an earlier deployment from the service's **Deployments** list. That does not undo migrations, so keep them backward-compatible: add columns before code uses them, and remove them in a later change.
+
+**After the first deploy**, check what the API sees as the caller's address. Railway documents `X-Real-IP` for this, but reports differ on how its proxy fills the forwarded headers. The app uses the last `X-Forwarded-For` entry to count wrong API tokens per address. If that turns out to be a Railway address, wrong tokens from everyone share one counter. Valid tokens are unaffected.
+
+**Not on Railway yet:**
+
+- **The bot.** Add it later as a second service from the same repository with start command `python manage.py runbot`, the same variables plus `TELEGRAM_*`, and exactly one replica.
+- **Backups.** Look at the Postgres service's **Backups** tab, which depends on the plan. Otherwise take a dump yourself with `pg_dump` and the database's public URL (Postgres → Connect).
+
 ## Deploy (VPS with Docker)
 
 1. Point a DNS A record for your domain at the server and open ports 80 and 443.

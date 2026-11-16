@@ -11,11 +11,14 @@ SECRET_KEY = env("SECRET_KEY")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
-# Production: the public hostname Caddy serves (e.g. dash.example.com).
-DOMAIN = env("DOMAIN", default="")
+# Production: the public hostname (e.g. dash.example.com). On Railway it
+# defaults to the service's generated domain.
+DOMAIN = env("DOMAIN", default="") or env("RAILWAY_PUBLIC_DOMAIN", default="")
 if DOMAIN:
     ALLOWED_HOSTS.append(DOMAIN)
     CSRF_TRUSTED_ORIGINS = [f"https://{DOMAIN}"]
+if env("RAILWAY_PROJECT_ID", default=""):
+    ALLOWED_HOSTS.append("healthcheck.railway.app")  # the Host of Railway's deploy health checks
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
@@ -25,8 +28,9 @@ if not DEBUG:
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_REFERRER_POLICY = "same-origin"
     X_FRAME_OPTIONS = "DENY"
-    # Caddy redirects HTTP to HTTPS, and HSTS is deliberately limited to this
-    # host (no subdomains, no preload) so other sites on the domain are unaffected.
+    # The proxy in front (Caddy, or Railway's edge) redirects HTTP to HTTPS, and
+    # HSTS is deliberately limited to this host (no subdomains, no preload) so
+    # other sites on the domain are unaffected.
     SILENCED_SYSTEM_CHECKS = ["security.W005", "security.W008", "security.W021"]
 
 INSTALLED_APPS = [
@@ -138,6 +142,6 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_CLASSES": ["api.auth.TokenThrottle"],
     "DEFAULT_THROTTLE_RATES": {"token": "120/min"},
-    "NUM_PROXIES": 1 if not DEBUG else None,  # behind Caddy in production
+    "NUM_PROXIES": 1 if not DEBUG else None,  # behind Caddy or Railway's edge in production
     "UNAUTHENTICATED_USER": None,
 }

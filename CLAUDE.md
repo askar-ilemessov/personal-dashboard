@@ -34,6 +34,8 @@ uv run ruff check .
 - `web/` — the UI. `views.py` (pages and actions), `tables.py` (one class per row type drives columns, inline edit form, filters, sort and CSV), `charts.py` (SVG sparkline/heatmap and Chart.js payloads), `static/web/app.js` and `app.css`, `templates/web/`.
 - `bot/` — Telegram bot. `replies.py` holds everything the bot says as plain sync functions returning `Reply(text, buttons)`; `handlers.py` is thin aiogram wiring; `management/commands/runbot.py` runs polling plus hourly housekeeping (`materialize_recurring`).
 - `Dockerfile`, `docker-compose.yml`, `Caddyfile` — production stack. See README.md for deploy steps.
+- `config/health.py` — `/healthz/` (no login, checks the database), used by Railway before switching to a new deploy.
+- `.github/workflows/ci.yml` — CI: ruff; migrations check, `check --deploy` and pytest on Postgres 17; Docker build plus a smoke test of the image.
 - `insights/` — `stats.py` (the stats engine: pure functions, no DB or LLM), `facts.py` (correlations, anomaly flags, weekly facts, all pre-formatted), `review.py` (weekly review: Claude or template writer, number check, Sunday schedule), `ask.py` (Ask my data: fixed read-only query tools and the tool loop).
 - `api/` — token-protected HTTP API for iOS Shortcuts (`POST /api/v1/log`, `POST /api/v1/undo`, `GET /api/v1/today`), built on DRF. `auth.py` holds the bearer-token check and rate limits.
 - `web/settings_views.py` — the Settings screen (general, goals, budgets, trackers, API tokens, account, people).
@@ -121,6 +123,9 @@ uv run ruff check .
 
 ## Production
 
+- Hosted on Railway (web service from the Dockerfile + Railway Postgres; bot not deployed yet). Railway settings live in its dashboard, not in the repo: pre-deploy `migrate && bootstrap`, healthcheck `/healthz/`, Wait for CI. Railway's `railway.json`/`railway.toml` stop working on 2026-12-01, so don't add one; its replacement (`.railway/railway.ts`) is possible later. `docker-compose.yml` remains the self-hosted alternative.
+- The image binds gunicorn to `$PORT` (default 8000). `DOMAIN` falls back to `RAILWAY_PUBLIC_DOMAIN`, and on Railway `healthcheck.railway.app` is added to `ALLOWED_HOSTS`.
+- Deploys happen by merging to `main`; CI must pass first. Migrations must stay backward-compatible because a rollback redeploys old code against the migrated database.
 - `DEBUG=false` turns on secure cookies and hashed static files (WhiteNoise). `DOMAIN` adds the host to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`.
 - The `web` container runs `migrate` and `bootstrap` on start; `bot` waits for `web` to be healthy.
 - gunicorn runs threaded with a 120s timeout because Ask my data and the review can wait on Claude for over a minute.
@@ -140,7 +145,7 @@ uv run ruff check .
 
 ## Testing
 
-Tests are required for the logging service, the parser and the stats engine, and isolation tests (`tracking/tests/test_owner.py`) for anything that reads or writes user data by a new route. The root conftest runs every test as the account `me` (`owner` fixture); switch with `acting_as`. Tests live in `<app>/tests/` (pytest-django); the shared fixture is in the root `conftest.py`. After changing a template, restart the dev server if the change does not show up. Commit after each phase.
+Tests are required for the logging service, the parser and the stats engine, and isolation tests (`tracking/tests/test_owner.py`) for anything that reads or writes user data by a new route. The root conftest runs every test as the account `me` (`owner` fixture); switch with `acting_as`. Tests live in `<app>/tests/` (pytest-django); the shared fixture is in the root `conftest.py`. After changing a template, restart the dev server if the change does not show up. CI runs the suite on Postgres, so keep tests database-neutral and independent of today's date. Commit after each phase.
 
 ## Status
 

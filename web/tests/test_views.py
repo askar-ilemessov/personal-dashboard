@@ -37,6 +37,22 @@ def test_everything_requires_login(db):
     assert anonymous.get(reverse("login")).status_code == 200
 
 
+def test_health_check_needs_no_login_and_checks_the_database(db, monkeypatch):
+    from types import SimpleNamespace
+
+    from django.db import OperationalError
+    from django.test import Client
+
+    response = Client().get("/healthz/")
+    assert response.status_code == 200 and response.content == b"ok"
+
+    def unreachable():
+        raise OperationalError("connection refused")
+
+    monkeypatch.setattr("config.health.connection", SimpleNamespace(cursor=unreachable))
+    assert Client().get("/healthz/").status_code == 503
+
+
 @pytest.mark.parametrize(
     "path",
     ["/", "/trends/", "/trends/?range=1y", "/habits/", "/expenses/", "/expenses/?range=7d&category=food&q=a",
@@ -291,8 +307,10 @@ def test_today_shows_flags(client):
     from datetime import timedelta as td
 
     today = days.today()
+    # Small amounts: 20 days of groceries stay under its 500 budget whatever the
+    # date, so no budget flag pushes the spike out of Today's top three.
     for i in range(20, 0, -1):
-        client.post("/log/", {"kind": "expense", "amount": 30 + i % 9, "category": "food", "day": (today - td(days=i)).isoformat()})
+        client.post("/log/", {"kind": "expense", "amount": 10 + i % 9, "category": "food", "day": (today - td(days=i)).isoformat()})
     client.post("/log/", {"kind": "expense", "amount": "900", "category": "shopping", "day": (today - td(days=2)).isoformat()})
     html = client.get("/").content.decode()
     assert "Spending spike on" in html
