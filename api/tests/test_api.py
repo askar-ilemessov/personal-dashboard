@@ -1,8 +1,11 @@
+from datetime import timedelta
+
 import pytest
 from django.test import Client
+from django.utils import timezone
 
 from tracking import days, metrics
-from tracking.models import ApiToken, Entry, Operation, SleepSession
+from tracking.models import ApiToken, AppSettings, Entry, Operation, SleepSession
 
 
 @pytest.fixture
@@ -48,7 +51,10 @@ def test_revoked_tokens_stop_working(api, token):
 
 
 def test_log_woke_like_an_alarm_shortcut_would(api, token):
-    assert post(api, "/api/v1/log", {"text": "slept 23:30"}).status_code == 201
+    # Bedtime eight hours ago, so "woke" closes it at any time of day (a fixed
+    # "23:30" is too long ago for a wake-up in the evening).
+    bedtime = (timezone.localtime(timezone.now(), AppSettings.load().tz) - timedelta(hours=8)).strftime("%H:%M")
+    assert post(api, "/api/v1/log", {"text": f"slept {bedtime}"}).status_code == 201
     response = post(api, "/api/v1/log", {"text": "woke"})
     body = response.json()
     assert response.status_code == 201 and body["ok"] and body["logged"][0].startswith("Woke up")
