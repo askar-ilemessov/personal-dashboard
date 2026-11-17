@@ -145,7 +145,11 @@ uv run ruff check .
 
 ## Testing
 
-Tests are required for the logging service, the parser and the stats engine, and isolation tests (`tracking/tests/test_owner.py`) for anything that reads or writes user data by a new route. The root conftest runs every test as the account `me` (`owner` fixture); switch with `acting_as`. Tests live in `<app>/tests/` (pytest-django); the shared fixture is in the root `conftest.py`. After changing a template, restart the dev server if the change does not show up. CI runs the suite on Postgres, so keep tests database-neutral and independent of today's date. Commit after each phase.
+Tests are required for the logging service, the parser and the stats engine, and isolation tests (`tracking/tests/test_owner.py`) for anything that reads or writes user data by a new route. The root conftest runs every test as the account `me` (`owner` fixture); switch with `acting_as`. Tests live in `<app>/tests/` (pytest-django); the shared fixture is in the root `conftest.py`. After changing a template, restart the dev server if the change does not show up. CI runs the suite on Postgres, so keep tests database-neutral and independent of today's date.
+
+## Git workflow
+
+`main` is protected (ruleset "main"): no direct pushes, force pushes or deletion. Each phase or change goes on a branch and is merged by pull request once the three CI checks pass (`Lint (ruff)`, `Tests (pytest on Postgres)`, `Docker image (build and smoke test)`) and the branch is up to date with `main`. No approval is required. Merging to `main` deploys to Railway. If a CI job is renamed, update the ruleset's required checks too, or merges will wait for a check that never runs.
 
 ## Status
 
