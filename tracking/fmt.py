@@ -21,9 +21,29 @@ def minutes(value) -> str:
     return f"{sign}{hours}h" if hours else f"{sign}{mins}m"
 
 
-def money(value, currency: str = "CAD", default_currency: str = "CAD") -> str:
-    amount = f"{Decimal(str(value)):,.2f}"
-    return f"${amount}" if currency == default_currency else f"{amount} {currency}"
+# Amounts in the main currency get its symbol; other currencies show their code.
+SYMBOLS = {"CAD": "$", "USD": "$", "AUD": "$", "NZD": "$", "MXN": "$",
+           "EUR": "€", "GBP": "£", "JPY": "¥", "INR": "₹", "KZT": "₸"}
+WHOLE = {"JPY", "KZT"}  # quoted without cents in everyday use
+
+
+def symbol(currency: str) -> str:
+    return SYMBOLS.get(currency, f"{currency} ")
+
+
+def places(currency: str) -> int:
+    return 0 if currency in WHOLE else 2
+
+
+def money(value, currency: str | None = None, default_currency: str | None = None) -> str:
+    """Without a default currency, uses the acting user's main currency."""
+    if default_currency is None:
+        from tracking.models import AppSettings
+
+        default_currency = AppSettings.load().default_currency
+    currency = currency or default_currency
+    amount = f"{Decimal(str(value)):,.{places(currency)}f}"
+    return f"{symbol(currency)}{amount}" if currency == default_currency else f"{amount} {currency}"
 
 
 def clock(dt: datetime, tz) -> str:

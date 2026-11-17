@@ -10,8 +10,10 @@ function fmtValue(kind, v, short) {
     if (short) return h ? (m ? (total / 60).toFixed(1) + "h" : h + "h") : m + "m";
     return h && m ? `${h}h ${String(m).padStart(2, "0")}m` : h ? `${h}h` : `${m}m`;
   }
-  if (kind === "money") {
-    return "$" + v.toLocaleString("en-CA", { minimumFractionDigits: short ? 0 : 2, maximumFractionDigits: short ? 0 : 2 });
+  if (kind === "money") {  // the main currency, from #money in base.html
+    const money = document.getElementById("money")?.dataset || {};
+    const digits = short ? 0 : Number(money.places ?? 2);
+    return (money.symbol ?? "$") + v.toLocaleString("en-CA", { minimumFractionDigits: digits, maximumFractionDigits: digits });
   }
   if (kind === "percent") return Math.round(v * 100) + "%";
   if (kind === "clock" || kind === "bedtime") {  // minutes after midnight, or after noon for bedtimes

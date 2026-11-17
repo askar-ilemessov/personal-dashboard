@@ -25,7 +25,7 @@
       <label>What should we call you? <input name="name" value="{{ user.first_name }}" autocomplete="given-name" autofocus></label>
       <label>Timezone
         <input name="timezone" id="timezone" value="{{ settings.timezone }}" list="timezones" autocomplete="off" required{% if detect_timezone %} data-detect{% endif %}>
-        <datalist id="timezones">{% for z in timezones %}<option value="{{ z }}">{% endfor %}</datalist>
+        <datalist id="timezones">{% for z, label in timezones %}<option value="{{ z }}"{% if label %} label="{{ label }}"{% endif %}>{% endfor %}</datalist>
         <span class="hint" id="timezone-hint">Where you are most of the time.</span></label>
       <label>Day starts at <input type="time" name="day_start" value="{{ settings.day_start|time:'H:i' }}" required>
         <span class="hint">Anything before this counts for the previous day.</span></label>
