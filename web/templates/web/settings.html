@@ -8,7 +8,7 @@
   <form class="settings-form" hx-post="{% url 'web:settings_general' %}" hx-swap="none">
     <label>Timezone
       <input name="timezone" value="{{ settings.timezone }}" list="timezones" autocomplete="off" required>
-      <datalist id="timezones">{% for z in timezones %}<option value="{{ z }}">{% endfor %}</datalist>
+      <datalist id="timezones">{% for z, label in timezones %}<option value="{{ z }}"{% if label %} label="{{ label }}"{% endif %}>{% endfor %}</datalist>
     </label>
     <label>Day starts at <input type="time" name="day_start" value="{{ settings.day_start|time:'H:i' }}" required>
       <span class="hint">Anything logged before this counts for the previous day.</span></label>

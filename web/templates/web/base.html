@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static web_tags %}<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -12,6 +12,8 @@
   <script defer src="{% static 'web/vendor/alpine.min.js' %}"></script>
 </head>
 <body hx-boost="true" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}' x-data>
+{% main_currency as currency %}{# Inside <body>, so a boosted page swap picks up a changed currency. #}
+<template id="money" data-symbol="{{ currency.symbol }}" data-places="{{ currency.places }}"></template>
 <div class="app">
   <aside class="sidebar">
     <a class="brand" href="{% url 'web:today' %}">Dashboard</a>

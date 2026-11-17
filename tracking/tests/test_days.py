@@ -1,5 +1,7 @@
 from datetime import UTC, date, datetime, time
 
+import pytest
+
 from conftest import local
 from tracking import days
 
@@ -8,6 +10,13 @@ def test_before_boundary_belongs_to_previous_day(configured):
     assert days.logical_day(local(2026, 11, 15, 3, 59)) == date(2026, 11, 14)
     assert days.logical_day(local(2026, 11, 15, 4, 0)) == date(2026, 11, 15)
     assert days.logical_day(local(2026, 11, 15, 23, 59)) == date(2026, 11, 15)
+
+
+def test_timezones_people_search_for():
+    assert days.zone_name(" Astana ") == days.zone_name("Asia/Almaty") == "Asia/Almaty"
+    assert datetime(2026, 11, 16, 12, tzinfo=days.ZoneInfo("Asia/Almaty")).utcoffset().seconds == 5 * 3600
+    with pytest.raises(ValueError, match="is not a timezone"):
+        days.zone_name("Mars/Olympus")
 
 
 def test_boundary_is_configurable(configured):

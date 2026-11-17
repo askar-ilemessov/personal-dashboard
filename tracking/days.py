@@ -1,6 +1,7 @@
 """Logical-day arithmetic. The only place that knows about the day boundary."""
 
 from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo, available_timezones
 
 from django.utils import timezone
 
@@ -44,3 +45,27 @@ def daterange(start: date, end: date):
     """Inclusive."""
     for i in range((end - start).days + 1):
         yield start + timedelta(days=i)
+
+
+# --- choosing a timezone ----------------------------------------------------------
+
+# Places people look for that aren't IANA zone names (Kazakhstan is one zone,
+# UTC+5 since 2024, named after Almaty).
+ZONE_ALIASES = {"astana": "Asia/Almaty", "nur-sultan": "Asia/Almaty"}
+ZONE_LABELS = {"Asia/Almaty": "Kazakhstan: Astana, Almaty"}
+
+
+def zone_name(text: str) -> str:
+    """The IANA name for what someone typed. Raises ValueError if it isn't one."""
+    text = text.strip()
+    name = ZONE_ALIASES.get(text.lower(), text)
+    try:
+        ZoneInfo(name)
+    except (KeyError, ValueError):
+        raise ValueError(f"“{text}” is not a timezone. Use a name like America/Toronto.") from None
+    return name
+
+
+def zone_choices() -> list[tuple[str, str]]:
+    """(name, label) for every timezone, for a <datalist>."""
+    return [(z, ZONE_LABELS.get(z, "")) for z in sorted(available_timezones())]

@@ -51,7 +51,7 @@ uv run ruff check .
 3. **Not logged ≠ 0.** No row means not logged; an `Entry` with value 0 means "logged, none". `metrics.series` returns `None` for unlogged tracker and sleep days. Expenses and exercise are event logs, so an empty day is 0. Never coerce `None` to 0 in stats or charts.
 4. **Days.** Rows store a UTC timestamp and a logical `day` computed at write time (boundary 04:00, in `AppSettings`). Changing the boundary does not rewrite history. Sleep belongs to the wake day. Django `TIME_ZONE` is UTC; the user's zone is `AppSettings.timezone`.
 5. **Trackers are data.** Habits, counters, durations and scales are `Tracker` rows; adding one needs no code. `sum` trackers add entries through the day; `last` trackers hold one row per day. Mood and energy are scale trackers.
-6. **Money.** `Decimal` only. `Expense.amount_base` is the amount in the default currency (CAD) using the manual `ExchangeRate` at logging time; there is no FX API.
+6. **Money.** `Decimal` only. `Expense.amount_base` is the amount in the account's main currency (`AppSettings.default_currency`, CAD by default) using the manual `ExchangeRate` at logging time; there is no FX API. Format amounts with `fmt.money`, which uses the acting user's currency, its symbol (`fmt.SYMBOLS`) and no cents for JPY and KZT; the charts get the same from `#money` in `base.html`. Never hard-code `$`.
 7. **LLM boundaries** (phases 4–5). The LLM parses text into intents and writes prose from computed facts. All numbers come from deterministic Python. Ask-my-data exposes fixed query functions only, no SQL.
 8. `LogError` messages are shown to the user verbatim: write them in plain language.
 9. **Accounts.** Every user-owned model extends `owner.OwnedModel`: `objects` only sees the acting user's rows and `save()` assigns new rows to them; with no acting user it raises `NoActingUser` rather than seeing everyone. Set the acting user only at the edges (middleware, API auth, bot middleware, the job loop, management commands via `account_for_command`) with `owner.acting_as(user)`; business logic never takes a `user` argument. `Model.all_users` is the unscoped manager, for the job loop and token lookup only. Slugs, currencies and review weeks are unique per user. New accounts get `defaults.install()` from a `post_save` signal.
@@ -75,6 +75,7 @@ uv run ruff check .
 - `SetupMiddleware` sends unfinished, non-deferred accounts to their step, except `/setup/`, `/settings/tokens/`, sign-in/out, `/welcome/`, `/password/`, the admin, the API and static files.
 - Setup pages are standalone full-page forms (like the login page), not HTMX swaps; errors render on the page. Steps reuse the Settings helpers (`create_tracker`, `budget_amounts`, `save_budgets`, `CURRENCIES`).
 - The main currency can change only until the first expense or recurring rule exists (`currency_locked`), in setup and in Settings.
+- Timezones are IANA names, checked by `days.zone_name`, which also accepts aliases people search for (`ZONE_ALIASES`: "Astana" → `Asia/Almaty`); `ZONE_LABELS` labels them in the timezone list.
 - Today shows a "First steps" card until setup is finished and something is logged. With every expense category hidden, `metrics.catalog` leaves spending out.
 - Goal suggestions are counters, durations and exercise only: a weekly goal on a habit would average 0s and 1s.
 

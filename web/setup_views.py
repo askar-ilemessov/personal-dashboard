@@ -6,7 +6,6 @@ AppSettings.setup_step is the first unfinished step ("" when done). Accounts
 not created by an invite start with it blank and never see these pages."""
 
 from datetime import time
-from zoneinfo import ZoneInfo, available_timezones
 
 from django.contrib.auth import views as auth_views
 from django.http import Http404
@@ -61,11 +60,10 @@ def examples() -> list[str]:
 
 def _about(request, s):
     p = request.POST
-    zone = p.get("timezone", "").strip()
     try:
-        ZoneInfo(zone)
-    except (KeyError, ValueError):
-        raise Invalid(f"“{zone}” is not a timezone. Use a name like America/Toronto.") from None
+        zone = days.zone_name(p.get("timezone", ""))
+    except ValueError as e:
+        raise Invalid(str(e)) from None
     try:
         day_start = time.fromisoformat(p.get("day_start", ""))
     except ValueError:
@@ -110,7 +108,7 @@ SAVE = {"about": _about, "track": _track, "spending": _spending, "goals": _goals
 
 def _context(step, request, s) -> dict:
     if step == "about":
-        return {"timezones": sorted(available_timezones()), "currencies": CURRENCIES, "locked": currency_locked(),
+        return {"timezones": days.zone_choices(), "currencies": CURRENCIES, "locked": currency_locked(),
                 "detect_timezone": s.setup_step == "about"}
     if step == "track":
         trackers = list(Tracker.objects.order_by("sort_order", "name"))

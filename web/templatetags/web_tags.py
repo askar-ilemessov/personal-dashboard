@@ -23,6 +23,16 @@ def money(value):
     return fmt.money(value)
 
 
+@register.simple_tag
+def main_currency():
+    """Symbol and decimal places of the acting user's currency, for the charts."""
+    from tracking import fmt, owner
+    from tracking.models import AppSettings
+
+    code = AppSettings.load().default_currency if owner.current_or_none() else "CAD"
+    return {"symbol": fmt.symbol(code), "places": fmt.places(code)}
+
+
 @register.filter
 def metric_value(value, fmt_name):
     from tracking import fmt

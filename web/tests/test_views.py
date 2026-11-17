@@ -335,6 +335,24 @@ def test_settings_general(client):
     assert events(client.post("/settings/general/", {**data, "day_start": "soon"}))["toast"]["error"]
 
 
+def test_astana_and_tenge(client):
+    from tracking import fmt
+    from tracking.models import AppSettings
+
+    data = {"timezone": "Astana", "day_start": "04:00", "reminder_time": "21:00", "weekly_review_time": "18:00",
+            "currency": "KZT"}
+    assert "error" not in events(client.post("/settings/general/", data))["toast"]
+    s = AppSettings.load()
+    assert (s.timezone, s.default_currency) == ("Asia/Almaty", "KZT")  # "Astana" is saved as its IANA zone
+    assert 'label="Kazakhstan: Astana, Almaty"' in client.get("/settings/").content.decode()
+
+    assert fmt.money(2500) == "₸2,500" and fmt.money("12.5", "USD") == "12.50 USD"
+    client.post("/log/", {"kind": "expense", "amount": "2500", "category": "food"})
+    page = client.get("/").content.decode()
+    assert "₸2,500" in page and "$2,500" not in page
+    assert 'data-symbol="₸" data-places="0"' in page  # what the charts format with
+
+
 def test_settings_goals(client):
     from tracking.models import Goal
 
