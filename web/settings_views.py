@@ -5,7 +5,6 @@ rather than going through tracking.logbook."""
 
 from datetime import time
 from decimal import Decimal, InvalidOperation
-from zoneinfo import ZoneInfo, available_timezones
 
 from django.conf import settings as django_settings
 from django.contrib.auth import get_user_model
@@ -39,7 +38,7 @@ ADMIN_LINKS = [
 ]
 
 
-CURRENCIES = ["CAD", "USD", "EUR", "GBP", "AUD", "NZD", "CHF", "JPY", "MXN", "INR"]
+CURRENCIES = ["CAD", "USD", "EUR", "GBP", "AUD", "NZD", "CHF", "JPY", "MXN", "INR", "KZT"]
 
 
 class Invalid(ValueError):
@@ -79,7 +78,7 @@ def page(request):
             m = None
         goals.append({"goal": g, "metric": m, "target": fmt.value(m.fmt, g.target) if m else g.target})
     return render(request, "web/settings.html", {
-        "nav": "settings", "settings": s, "timezones": sorted(available_timezones()),
+        "nav": "settings", "settings": s, "timezones": days.zone_choices(),
         "currencies": CURRENCIES, "currency_locked": currency_locked(),
         "goals": goals, "goal_metrics": _goal_metrics(),
         "budget_rows": [{"category": c, "amount": current.get(c.pk)} for c in ExpenseCategory.objects.filter(is_active=True)],
@@ -96,12 +95,10 @@ def page(request):
 def general(request):
     p, s = request.POST, AppSettings.load()
     try:
-        zone = p.get("timezone", "").strip()
         try:
-            ZoneInfo(zone)
-        except (KeyError, ValueError):
-            raise Invalid(f"“{zone}” is not a timezone. Use a name like America/Toronto.") from None
-        s.timezone = zone
+            s.timezone = days.zone_name(p.get("timezone", ""))
+        except ValueError as e:
+            raise Invalid(str(e)) from None
         s.day_start = _time(p.get("day_start"), "Day start")
         s.reminder_time = _time(p.get("reminder_time"), "Reminder time")
         s.weekly_review_time = _time(p.get("weekly_review_time"), "Review time")
