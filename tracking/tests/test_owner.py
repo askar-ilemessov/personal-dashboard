@@ -9,7 +9,7 @@ from django.core.management import call_command
 from django.test import Client
 
 from bot import jobs
-from bot.tests.test_bot import Chatter
+from bot.tests.test_bot import Chatter, link
 from insights import review
 from insights.models import WeeklyReview
 from parsing import parser
@@ -24,6 +24,7 @@ from tracking.models import (
     ExpenseCategory,
     Operation,
     RecurringExpense,
+    TelegramLink,
     Tracker,
 )
 from tracking.owner import NoActingUser, acting_as, current_or_none
@@ -101,7 +102,7 @@ def test_scheduled_jobs_materialise_every_accounts_rules(owner, other):
             RecurringExpense.objects.create(name="Gym", amount=Decimal(49), start_date=date(2026, 11, 1),
                                             category=ExpenseCategory.objects.get(slug="health"))
     with acting_as(None):
-        jobs.run_due(owner)
+        jobs.run_due()
     assert {e.user for e in Expense.all_users.all()} == {owner, other}
 
 
@@ -184,13 +185,36 @@ def test_api_tokens_of_deactivated_accounts_stop_working(other):
 
 
 @pytest.mark.django_db(transaction=True)
-async def test_the_bot_logs_to_its_account_whoever_else_is_acting(owner, other):
+async def test_each_telegram_user_logs_to_the_account_they_linked(owner, other):
     from asgiref.sync import sync_to_async
 
-    with acting_as(other):
-        await Chatter(owner).say("/coffee")
-    count = sync_to_async(lambda u: Entry.all_users.filter(user=u).count())
-    assert await count(owner) == 1 and await count(other) == 0
+    await sync_to_async(link)(owner, 1)
+    await sync_to_async(link)(other, 2)
+    chat = Chatter()
+    with acting_as(other):  # whoever happens to be acting, the sender decides
+        await chat.say("/coffee", user=1)
+    await chat.say("/coffee 2", user=2)
+    entries = sync_to_async(lambda u: [e.value for e in Entry.all_users.filter(user=u)])
+    assert await entries(owner) == [1] and await entries(other) == [2]
+
+
+def test_settings_only_shows_and_changes_your_own_telegram_link(web, other, settings):
+    settings.TELEGRAM_BOT_USERNAME = "dash_bot"
+    link(other, 2)
+    assert b"Connect Telegram" in web.get("/settings/").content
+    assert web.get("/settings/telegram/").status_code == 204  # owner has not linked
+    web.post("/settings/telegram/disconnect/")
+    assert TelegramLink.for_telegram(2).user == other
+
+
+def test_scheduled_messages_go_to_each_linked_account(owner, other, monkeypatch):
+    from bot import replies
+
+    link(other, 2)
+    monkeypatch.setattr(jobs, "evening_reminder", lambda now=None: replies.Reply(current_or_none().username))
+    monkeypatch.setattr(jobs, "weekly_review", lambda now=None: None)
+    with acting_as(None):
+        assert [(chat, r.text) for chat, r in jobs.run_due()] == [(2, "other")]  # owner has no Telegram
 
 
 # --- accounts --------------------------------------------------------------

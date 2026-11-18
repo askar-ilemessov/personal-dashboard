@@ -121,10 +121,10 @@ STORAGES = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Only the bot process needs the token. The web app needs the username, for
+# the Settings link (t.me/<username>?start=<code>); without it Telegram is hidden.
 TELEGRAM_BOT_TOKEN = env("TELEGRAM_BOT_TOKEN", default="")
-TELEGRAM_USER_ID = int(env("TELEGRAM_USER_ID", default="") or 0)
-# The bot serves one person: the Telegram user above, logging as this app account (a username).
-TELEGRAM_ACCOUNT = env("TELEGRAM_ACCOUNT", default="")
+TELEGRAM_BOT_USERNAME = env("TELEGRAM_BOT_USERNAME", default="").lstrip("@")
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 # Free-text parsing falls back to this model when the grammar can't read a message.
 PARSER_MODEL = env("PARSER_MODEL", default="claude-haiku-5-5")

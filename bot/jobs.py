@@ -2,7 +2,7 @@
 the messages to send; each job records that it ran, so nothing is sent twice.
 
 Recurring expenses are materialised for every account. Reminders and the
-weekly review go out on Telegram, so only the bot's account gets them."""
+weekly review go out on Telegram, so only accounts that linked it get them."""
 
 from datetime import datetime
 
@@ -12,7 +12,7 @@ from django.utils import timezone
 from insights import review
 from insights.models import WeeklyReview
 from tracking import days, logbook
-from tracking.models import AppSettings
+from tracking.models import AppSettings, TelegramLink
 from tracking.owner import acting_as
 
 from . import replies
@@ -56,10 +56,13 @@ def weekly_review(now: datetime | None = None) -> replies.Reply | None:
     return reply
 
 
-def run_due(account, now: datetime | None = None) -> list[replies.Reply]:
-    """Messages for `account`, the user the bot serves."""
+def run_due(now: datetime | None = None) -> list[tuple[int, replies.Reply]]:
+    """(Telegram user id, message) pairs to send now."""
     for user in get_user_model().objects.filter(is_active=True):
         with acting_as(user):
             logbook.materialize_recurring()
-    with acting_as(account):
-        return [r for r in (evening_reminder(now), weekly_review(now)) if r]
+    out = []
+    for link in TelegramLink.all_users.select_related("user").filter(telegram_id__isnull=False, user__is_active=True):
+        with acting_as(link.user):
+            out += [(link.telegram_id, r) for r in (evening_reminder(now), weekly_review(now)) if r]
+    return out

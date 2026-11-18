@@ -117,3 +117,12 @@ class ApiTokenAdmin(admin.ModelAdmin):
             obj.token_hash = models.ApiToken.digest(token)
             messages.warning(request, f"Token (shown once, copy it now): {token}")
         super().save_model(request, obj, form, change)
+
+
+@admin.register(models.TelegramLink)
+class TelegramLinkAdmin(admin.ModelAdmin):
+    list_display = ["name", "telegram_id", "linked_at"]
+    readonly_fields = ["telegram_id", "name", "linked_at"]
+
+    def has_add_permission(self, request):
+        return False  # links are made from Settings → Telegram

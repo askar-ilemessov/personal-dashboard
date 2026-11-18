@@ -10,7 +10,7 @@ Conventions (see CLAUDE.md):
 
 import hashlib
 import secrets
-from datetime import time
+from datetime import time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -419,3 +419,69 @@ class ApiToken(OwnedModel):
     @classmethod
     def lookup(cls, raw: str) -> "ApiToken | None":
         return cls.all_users.filter(token_hash=cls.digest(raw), is_active=True).select_related("user").first()
+
+
+class TelegramLink(OwnedModel):
+    """Connects an account to one Telegram user, so the bot knows whose data a
+    message is for. Linking: Settings issues a one-time code (only its SHA-256
+    is stored), the person opens t.me/<bot>?start=<code>, and the bot redeems
+    it for whoever sent it. A Telegram user belongs to at most one account."""
+
+    CODE_VALID = timedelta(minutes=15)
+
+    telegram_id = models.BigIntegerField(null=True, blank=True, unique=True)
+    name = models.CharField(max_length=128, blank=True, help_text="Telegram name when linked")
+    code_hash = models.CharField(max_length=64, blank=True, editable=False)
+    code_expires_at = models.DateTimeField(null=True, blank=True, editable=False)
+    linked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user"], name="one_telegram_link_per_user")]
+
+    def __str__(self):
+        return self.name or str(self.telegram_id or "not linked")
+
+    @property
+    def linked(self) -> bool:
+        return self.telegram_id is not None
+
+    @classmethod
+    def load(cls) -> "TelegramLink | None":
+        return cls.objects.first()
+
+    @classmethod
+    def new_code(cls) -> str:
+        """A fresh one-time code for the acting user; replaces any earlier one."""
+        raw = secrets.token_urlsafe(24)  # 32 characters, all allowed in a /start parameter
+        link, _ = cls.objects.get_or_create()
+        link.code_hash = ApiToken.digest(raw)
+        link.code_expires_at = timezone.now() + cls.CODE_VALID
+        link.save(update_fields=["code_hash", "code_expires_at"])
+        return raw
+
+    @classmethod
+    def redeem(cls, raw: str, telegram_id: int, name: str) -> "TelegramLink | None":
+        """Link `telegram_id` to the account that issued `raw`. Moves the
+        Telegram user off any account it was linked to before."""
+        from django.db import transaction
+
+        with transaction.atomic():
+            link = (cls.all_users.select_for_update().select_related("user")
+                    .filter(code_hash=ApiToken.digest(raw), code_expires_at__gt=timezone.now(),
+                            user__is_active=True).first())
+            if link is None:
+                return None
+            cls.all_users.filter(telegram_id=telegram_id).exclude(pk=link.pk).update(
+                telegram_id=None, name="", linked_at=None)
+            link.telegram_id, link.name, link.linked_at = telegram_id, name[:128], timezone.now()
+            link.code_hash, link.code_expires_at = "", None
+            link.save()
+            return link
+
+    @classmethod
+    def for_telegram(cls, telegram_id: int) -> "TelegramLink | None":
+        return cls.all_users.select_related("user").filter(telegram_id=telegram_id, user__is_active=True).first()
+
+    def unlink(self):
+        self.telegram_id, self.name, self.linked_at = None, "", None
+        self.save(update_fields=["telegram_id", "name", "linked_at"])

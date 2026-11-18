@@ -1,4 +1,4 @@
-"""Settings screen: general options, goals, budgets, trackers, API tokens.
+"""Settings screen: general options, goals, budgets, trackers, Telegram, API tokens.
 
 These edit configuration, not logged data, so they write models directly
 rather than going through tracking.logbook."""
@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings as django_settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import user_passes_test
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils.text import slugify
@@ -24,6 +25,7 @@ from tracking.models import (
     ExpenseCategory,
     Goal,
     RecurringExpense,
+    TelegramLink,
     Tracker,
 )
 
@@ -84,6 +86,7 @@ def page(request):
         "budget_rows": [{"category": c, "amount": current.get(c.pk)} for c in ExpenseCategory.objects.filter(is_active=True)],
         "trackers": Tracker.objects.all(), "kinds": Tracker.Kind.choices,
         "tokens": ApiToken.objects.filter(is_active=True).order_by("-created_at"),
+        **telegram_context(),
         "api_url": request.build_absolute_uri(reverse("api:log")),
         "links": [(label, reverse(name)) for label, name in ADMIN_LINKS],
         "people": get_user_model().objects.filter(is_active=True).order_by("username")
@@ -258,6 +261,37 @@ def token_add(request):
         return _error("Name the token after where it will be used, e.g. iPhone Shortcuts.")
     token, raw = ApiToken.issue(name[:64])
     return render(request, "web/partials/new_token.html", {"token": token, "raw": raw})
+
+
+def telegram_context(**extra) -> dict:
+    return {"bot": django_settings.TELEGRAM_BOT_USERNAME, "link": TelegramLink.load(), **extra}
+
+
+def _telegram(request, **extra):
+    return render(request, "web/partials/telegram.html", telegram_context(**extra))
+
+
+@require_POST
+def telegram_connect(request):
+    if not django_settings.TELEGRAM_BOT_USERNAME:
+        return _error("Telegram isn't set up on this server.")
+    return _telegram(request, code=TelegramLink.new_code())
+
+
+def telegram_status(request):
+    """Polled while a link code is out: nothing until the bot has redeemed it."""
+    link = TelegramLink.load()
+    if link is None or not link.linked:
+        return HttpResponse(status=204)
+    return _telegram(request)
+
+
+@require_POST
+def telegram_disconnect(request):
+    link = TelegramLink.load()
+    if link is not None:
+        link.unlink()
+    return _telegram(request)
 
 
 @require_POST

@@ -8,7 +8,7 @@ returning everyone's data.
 The acting user is set at the edges, never in business logic:
     web     OwnerMiddleware, from the logged-in user
     API     api.auth.BearerToken, from the token's owner
-    bot     bot.handlers, the account TELEGRAM_ACCOUNT names
+    bot     bot.handlers.Accounts, the account the sender linked
     jobs    bot.jobs.run_due, once per user
 
     with acting_as(user):

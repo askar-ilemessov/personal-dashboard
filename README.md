@@ -21,10 +21,13 @@ Everyone shares the server's Claude API key, so the palette, weekly reviews and 
 
 ## Telegram bot
 
-1. Create a bot with [@BotFather](https://t.me/BotFather) and copy its token into `TELEGRAM_BOT_TOKEN`.
-2. Message [@userinfobot](https://t.me/userinfobot) to get your numeric ID and put it in `TELEGRAM_USER_ID`. The bot ignores everyone else.
-3. Put your app username in `TELEGRAM_ACCOUNT`: what you send the bot is logged to that account, and reminders and the weekly review are for it. (The bot serves one person; other accounts use the web app and Shortcuts.)
-4. `uv run python manage.py runbot`, then send `/help` to your bot.
+One bot serves every account. Each person connects their own Telegram, and what they send is logged to their account only.
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`). Put the token it gives you in `TELEGRAM_BOT_TOKEN` and the bot's username (without `@`) in `TELEGRAM_BOT_USERNAME`.
+2. `uv run python manage.py runbot` (alongside `runserver`).
+3. In the app, open **Settings → Telegram → Connect Telegram**, then **Open Telegram** and press **Start**. The page shows "Connected" once the bot has the code. The link works once, for 15 minutes. Invited people get the same button in the last setup step.
+
+The bot answers only private chats with connected people; anyone else is told to connect from Settings, and nothing they send is saved. Connecting a Telegram user to another account moves it there. Disconnect from Settings; deactivating an account also stops the bot serving it.
 
 ## Checks (CI)
 
@@ -62,15 +65,30 @@ The web app runs on [Railway](https://railway.com) from this repository's Docker
 
 **After the first deploy**, check what the API sees as the caller's address. Railway documents `X-Real-IP` for this, but reports differ on how its proxy fills the forwarded headers. The app uses the last `X-Forwarded-For` entry to count wrong API tokens per address. If that turns out to be a Railway address, wrong tokens from everyone share one counter. Valid tokens are unaffected.
 
+**The Telegram bot** runs as a second service from the same repository. It talks to Telegram by long polling, so it needs no domain or open port.
+
+1. Create the bot with @BotFather as above.
+2. In the project, **+ Create → GitHub Repo →** `personal-dashboard`, and rename the new service to `bot`.
+3. On the `bot` service, open **Variables** and add:
+   - `SECRET_KEY` = `${{web.SECRET_KEY}}` (use the web service's name if it isn't `web`)
+   - `DEBUG` = `false`
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`
+   - `APP_TIMEZONE` and `ANTHROPIC_API_KEY`, the same as the web service
+   - `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME`
+4. Under **Settings**: **Deploy → Custom Start Command** `python manage.py runbot`; no pre-deploy command (the web service runs migrations); no healthcheck; no domain; **Source → Wait for CI** on; one replica. Two copies would fight over Telegram's updates.
+5. On the **web** service add `TELEGRAM_BOT_USERNAME` too. That shows **Settings → Telegram** in the app.
+6. Deploy both, then connect from Settings → Telegram. The bot's **Deploy Logs** show `Running as @yourbot` when it has started.
+
+Every merge to `main` redeploys both. For a few seconds the old and new bot overlap and Telegram reports a conflict to one of them; it retries by itself. If a merge adds a migration, the bot may start a moment before the web service has migrated; messages in that window fail and can be sent again.
+
 **Not on Railway yet:**
 
-- **The bot.** Add it later as a second service from the same repository with start command `python manage.py runbot`, the same variables plus `TELEGRAM_*`, and exactly one replica.
 - **Backups.** Look at the Postgres service's **Backups** tab, which depends on the plan. Otherwise take a dump yourself with `pg_dump` and the database's public URL (Postgres → Connect).
 
 ## Deploy (VPS with Docker)
 
 1. Point a DNS A record for your domain at the server and open ports 80 and 443.
-2. Copy the repository to the server and create `.env` from `.env.example`. Set `SECRET_KEY`, `DOMAIN`, `POSTGRES_PASSWORD`, `APP_TIMEZONE`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_USER_ID` and `TELEGRAM_ACCOUNT` (the username you create next).
+2. Copy the repository to the server and create `.env` from `.env.example`. Set `SECRET_KEY`, `DOMAIN`, `POSTGRES_PASSWORD`, `APP_TIMEZONE`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_BOT_USERNAME`. Connect Telegram from Settings once you have signed in.
 3. Start it and create your login:
 
 ```bash
@@ -118,4 +136,4 @@ curl -X POST https://YOUR-DOMAIN/api/v1/log -H "Authorization: Bearer YOUR-TOKEN
 
 ## Reminders
 
-With the bot running, it sends an evening message listing anything still unlogged (default 21:00) and the weekly review on Sunday (default 18:00). Both times, and whether they are sent at all, are under Settings → General.
+With the bot running, it sends each connected person an evening message listing anything still unlogged (default 21:00) and the weekly review on Sunday (default 18:00). Both times, and whether they are sent at all, are under Settings → General.

@@ -32,13 +32,13 @@ uv run ruff check .
 - `parsing/parser.py` — **the shared parser**: `interpret(text)` tries the grammar, then Claude; `save_draft` / `draft_intents` back the confirm step. Web, bot and (later) Shortcuts all call this.
 - `parsing/grammar.py` — tier 1, deterministic. `parsing/llm.py` — tier 2, Claude with a JSON schema built from the active trackers and categories. `parsing/describe.py` turns intents into preview/toast text.
 - `web/` — the UI. `views.py` (pages and actions), `tables.py` (one class per row type drives columns, inline edit form, filters, sort and CSV), `charts.py` (SVG sparkline/heatmap and Chart.js payloads), `static/web/app.js` and `app.css`, `templates/web/`.
-- `bot/` — Telegram bot. `replies.py` holds everything the bot says as plain sync functions returning `Reply(text, buttons)`; `handlers.py` is thin aiogram wiring; `management/commands/runbot.py` runs polling plus hourly housekeeping (`materialize_recurring`).
+- `bot/` — Telegram bot. `replies.py` holds everything the bot says as plain sync functions returning `Reply(text, buttons)`; `handlers.py` is thin aiogram wiring plus the `Accounts` middleware; `management/commands/runbot.py` runs polling plus the minute-by-minute jobs. Which account a Telegram user logs to is `tracking.models.TelegramLink`.
 - `Dockerfile`, `docker-compose.yml`, `Caddyfile` — production stack. See README.md for deploy steps.
 - `config/health.py` — `/healthz/` (no login, checks the database), used by Railway before switching to a new deploy.
 - `.github/workflows/ci.yml` — CI: ruff; migrations check, `check --deploy` and pytest on Postgres 17; Docker build plus a smoke test of the image.
 - `insights/` — `stats.py` (the stats engine: pure functions, no DB or LLM), `facts.py` (correlations, anomaly flags, weekly facts, all pre-formatted), `review.py` (weekly review: Claude or template writer, number check, Sunday schedule), `ask.py` (Ask my data: fixed read-only query tools and the tool loop).
 - `api/` — token-protected HTTP API for iOS Shortcuts (`POST /api/v1/log`, `POST /api/v1/undo`, `GET /api/v1/today`), built on DRF. `auth.py` holds the bearer-token check and rate limits.
-- `web/settings_views.py` — the Settings screen (general, goals, budgets, trackers, API tokens, account, people).
+- `web/settings_views.py` — the Settings screen (general, goals, budgets, trackers, Telegram, API tokens, account, people).
 - `web/invites.py` — invite links (Django's password-reset token on `/welcome/…`); `manage.py invite` prints one.
 - `web/setup_views.py` — onboarding for invited accounts: `Welcome` (set password), five steps on `/setup/<step>/` (about, track, spending, goals, logging), `SetupMiddleware`. Template `web/setup.html`.
 - `bot/jobs.py` — scheduled jobs (`run_due`, called every minute by `runbot`): recurring expenses, evening reminder, Sunday review.
@@ -72,7 +72,7 @@ uv run ruff check .
 
 - Only invited accounts go through it: `invites.invite` runs `defaults.start_invited()` (only `STARTER_TRACKERS` on, starter goals from `SUGGESTED_GOALS`), sets `AppSettings.setup_step = "about"` and records `invited_by`. `createsuperuser` accounts start with `setup_step` blank.
 - `setup_step` is the first unfinished step; blank means done. Each step saves on Continue; Back never rewinds progress; Skip keeps what is there. "Skip setup" sets `setup_deferred`, and Today then shows a "Finish setting up" link instead of redirecting.
-- `SetupMiddleware` sends unfinished, non-deferred accounts to their step, except `/setup/`, `/settings/tokens/`, sign-in/out, `/welcome/`, `/password/`, the admin, the API and static files.
+- `SetupMiddleware` sends unfinished, non-deferred accounts to their step, except `/setup/`, `/settings/tokens/`, `/settings/telegram/`, sign-in/out, `/welcome/`, `/password/`, the admin, the API and static files.
 - Setup pages are standalone full-page forms (like the login page), not HTMX swaps; errors render on the page. Steps reuse the Settings helpers (`create_tracker`, `budget_amounts`, `save_budgets`, `CURRENCIES`).
 - The main currency can change only until the first expense or recurring rule exists (`currency_locked`), in setup and in Settings.
 - Timezones are IANA names, checked by `days.zone_name`, which also accepts aliases people search for (`ZONE_ALIASES`: "Astana" → `Asia/Almaty`); `ZONE_LABELS` labels them in the timezone list.
@@ -104,7 +104,9 @@ uv run ruff check .
 - Commands and buttons log immediately and reply with an Undo button. Free text goes through `parser.interpret` and gets a "Save this?" preview backed by a `Draft`.
 - Every command is turned into grammar text (`/drink 2` -> `alcohol 2`) and goes through `parsing.grammar`; unknown commands are passed through, so a new tracker is a command with no code.
 - Callback data: `q:<grammar text>`, `undo:<op id>`, `habit:<slug>`, `ok:<draft id>`, `no:<draft id>`, `habits`, `today`, `menu` (64-byte limit).
-- Only `TELEGRAM_USER_ID` is served; other updates are dropped silently by the `OwnerOnly` middleware, which acts as the `TELEGRAM_ACCOUNT` user. Reminders and the weekly review go to that account only; recurring expenses are materialised for every account.
+- One bot serves every account. The `Accounts` middleware acts as the account the sender linked (`TelegramLink.for_telegram`); private chats only. Unlinked people can only redeem a link code (`/start <code>`, matched before anything else); other messages get `replies.NOT_LINKED`, callbacks nothing. Linking: Settings → Telegram issues a one-time code (`TelegramLink.new_code`, SHA-256 stored, 15 minutes), shown as `t.me/<TELEGRAM_BOT_USERNAME>?start=<code>`; the page polls `/settings/telegram/` (204 until linked). One Telegram user per account and one account per Telegram user; redeeming moves it.
+- `jobs.run_due()` returns `(telegram_id, Reply)` pairs: reminders and the weekly review for every linked account; recurring expenses are materialised for every account. A failed send (blocked bot) is logged and the others still go out.
+- `TELEGRAM_BOT_TOKEN` is for the bot process only; the web app needs `TELEGRAM_BOT_USERNAME`, and hides Telegram without it.
 - Messages use HTML parse mode: escape anything that came from the user or the database.
 - Bot tests feed real `Update` objects through the dispatcher with a fake session (`bot/tests/test_bot.py`); no token or network.
 
@@ -124,7 +126,7 @@ uv run ruff check .
 
 ## Production
 
-- Hosted on Railway (web service from the Dockerfile + Railway Postgres; bot not deployed yet). Railway settings live in its dashboard, not in the repo: pre-deploy `migrate && bootstrap`, healthcheck `/healthz/`, Wait for CI. Railway's `railway.json`/`railway.toml` stop working on 2026-12-01, so don't add one; its replacement (`.railway/railway.ts`) is possible later. `docker-compose.yml` remains the self-hosted alternative.
+- Hosted on Railway: web service from the Dockerfile, Railway Postgres, and a `bot` service from the same image with start command `python manage.py runbot` (one replica, no domain, no healthcheck, no pre-deploy; README has the variables). Railway settings live in its dashboard, not in the repo: pre-deploy `migrate && bootstrap`, healthcheck `/healthz/`, Wait for CI. Railway's `railway.json`/`railway.toml` stop working on 2026-12-01, so don't add one; its replacement (`.railway/railway.ts`) is possible later. `docker-compose.yml` remains the self-hosted alternative.
 - The image binds gunicorn to `$PORT` (default 8000). `DOMAIN` falls back to `RAILWAY_PUBLIC_DOMAIN`, and on Railway `healthcheck.railway.app` is added to `ALLOWED_HOSTS`.
 - Deploys happen by merging to `main`; CI must pass first. Migrations must stay backward-compatible because a rollback redeploys old code against the migrated database.
 - `DEBUG=false` turns on secure cookies and hashed static files (WhiteNoise). `DOMAIN` adds the host to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`.
@@ -160,4 +162,5 @@ Tests are required for the logging service, the parser and the stats engine, and
 - [x] Phase 4: natural-language parser (Claude tier, drafts, palette and bot wiring). Tested with a fake client only; not yet run against the real API.
 - [x] Phase 5: insights (stats engine, correlations, anomaly flags, weekly review with Sunday delivery, Ask my data). Claude wording and Ask my data are tested with fake clients only.
 - [x] Phase 6: Settings screen (general, goals, budgets, trackers, tokens), evening reminder, Shortcuts API, nightly backups, deploy hardening. Not yet deployed to a real server or run against real Telegram / the real Claude API.
-- [x] Phase 7: multiple accounts (invite-only, fully separate data, scoped managers, isolation tests) and onboarding for invited people (welcome, five setup steps, First steps card). The bot still serves one account; linking more Telegram users is future work.
+- [x] Phase 7: multiple accounts (invite-only, fully separate data, scoped managers, isolation tests) and onboarding for invited people (welcome, five setup steps, First steps card).
+- [x] Telegram for every account: each person links their own Telegram from Settings (or setup); bot runs as a second Railway service.

@@ -5,9 +5,17 @@ import re
 
 from aiogram import BaseMiddleware, Dispatcher, F, Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    Update,
+    User,
+)
 from asgiref.sync import sync_to_async
 
+from tracking.models import TelegramLink
 from tracking.owner import acting_as
 
 from . import replies
@@ -27,20 +35,34 @@ COMMANDS = [
 ]
 
 
-class OwnerOnly(BaseMiddleware):
-    """Single-user bot: updates from anyone else are dropped without a reply.
-    The owner's messages are logged to `account` (see tracking.owner)."""
+START_CODE = re.compile(r"^/start(?:@\w+)?\s+([A-Za-z0-9_-]{16,64})\s*$")
 
-    def __init__(self, user_id: int, account):
-        self.user_id = user_id
-        self.account = account
 
-    async def __call__(self, handler, event, data):
-        user = data.get("event_from_user")
-        if user is None or user.id != self.user_id:
-            log.warning("Ignored update from user %s", getattr(user, "id", None))
+def _name(user: User) -> str:
+    return f"{user.full_name} (@{user.username})" if user.username else user.full_name
+
+
+class Accounts(BaseMiddleware):
+    """Each update acts as the account its sender linked in Settings (see
+    TelegramLink). Only private chats are served. Someone who is not linked
+    can only redeem a link code; anything else gets a pointer to Settings."""
+
+    async def __call__(self, handler, event: Update, data):
+        user, chat = data.get("event_from_user"), data.get("event_chat")
+        if user is None or user.is_bot or chat is None or chat.type != "private":
             return None
-        with acting_as(self.account):  # sync_to_async copies the context into its thread
+        message = event.message
+        match = START_CODE.match(message.text or "") if message else None
+        if match:
+            reply = await sync_to_async(replies.link)(match[1], user.id, _name(user))
+            return await message.answer(reply.text)
+        link = await sync_to_async(TelegramLink.for_telegram)(user.id)
+        if link is None:
+            log.info("Update from unlinked Telegram user %s", user.id)
+            if message is not None:
+                await message.answer(replies.NOT_LINKED)
+            return None
+        with acting_as(link.user):  # sync_to_async copies the context into its thread
             return await handler(event, data)
 
 
@@ -148,8 +170,8 @@ def build_router() -> Router:
     return router
 
 
-def build_dispatcher(owner_id: int, account) -> Dispatcher:
+def build_dispatcher() -> Dispatcher:
     dispatcher = Dispatcher()
-    dispatcher.update.outer_middleware(OwnerOnly(owner_id, account))
+    dispatcher.update.outer_middleware(Accounts())
     dispatcher.include_router(build_router())
     return dispatcher
