@@ -30,6 +30,7 @@ from .settings_views import (
     create_tracker,
     currency_locked,
     save_budgets,
+    telegram_context,
 )
 
 STEPS = ["about", "track", "spending", "goals", "logging"]
@@ -127,7 +128,8 @@ def _context(step, request, s) -> dict:
             {"key": key, "name": name, "ticked": Goal.objects.filter(
                 metric=metric, comparator=comparator, period=period, is_active=True).exists()}
             for key, name, metric, comparator, _target, period, _, _ in defaults.suggested_goals()]}
-    return {"examples": examples(), "has_token": ApiToken.objects.filter(is_active=True).exists()}
+    return {"examples": examples(), "has_token": ApiToken.objects.filter(is_active=True).exists(),
+            **telegram_context()}
 
 
 def _advance(s, step):
@@ -199,7 +201,7 @@ class SetupMiddleware:
     """Unfinished accounts are sent to their setup step, unless they chose
     “Skip setup”. Signing out, the API, the admin and static files are left alone."""
 
-    EXEMPT = ("/setup/", "/settings/tokens/", "/logout/", "/login/", "/welcome/", "/password/", "/admin/", "/api/",
+    EXEMPT = ("/setup/", "/settings/tokens/", "/settings/telegram/", "/logout/", "/login/", "/welcome/", "/password/", "/admin/", "/api/",
               "/static/")
 
     def __init__(self, get_response):

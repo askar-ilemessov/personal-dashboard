@@ -21,7 +21,7 @@ from parsing.grammar import parse
 from parsing.models import Draft
 from tracking import days, fmt, logbook, metrics
 from tracking.logbook import LogError, TrackerLog
-from tracking.models import AppSettings, Entry, Goal, Operation, Tracker
+from tracking.models import AppSettings, Entry, Goal, Operation, TelegramLink, Tracker
 
 SOURCE = "telegram"
 
@@ -48,6 +48,20 @@ Any tracker works as a command, and you can also just type:
 class Reply:
     text: str
     buttons: list[list[tuple[str, str]]] = field(default_factory=list)  # rows of (label, callback data)
+
+
+NOT_LINKED = ("This bot logs to a Personal dashboard account. To connect yours, open "
+              "<b>Settings → Telegram</b> in the app and press <b>Connect Telegram</b>.")
+
+
+def link(code: str, telegram_id: int, name: str) -> Reply:
+    """Redeem a code from Settings. Runs with no acting user: the code says whose account it is."""
+    linked = TelegramLink.redeem(code, telegram_id, name)
+    if linked is None:
+        return Reply("That link has expired or was already used. Open <b>Settings → Telegram</b> "
+                     "in the app for a new one.")
+    return Reply(f"Connected to <b>{escape(linked.user.username)}</b>. What you send here is now "
+                 f"logged to that account. To disconnect, use Settings in the app.\n\n{HELP}")
 
 
 def _undo_button(op: Operation):

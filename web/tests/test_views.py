@@ -441,3 +441,30 @@ def test_settings_tokens(client):
     assert events(client.post("/settings/tokens/", {"name": ""}))["toast"]["error"]
     client.post(f"/settings/tokens/{token.pk}/revoke/")
     assert not ApiToken.objects.exists()
+
+
+def test_telegram_is_hidden_until_the_bot_is_configured(client, settings):
+    settings.TELEGRAM_BOT_USERNAME = ""
+    assert "Connect Telegram" not in client.get("/settings/").content.decode()
+    assert events(client.post("/settings/telegram/connect/"))["toast"]["error"]
+
+
+def test_connecting_telegram_from_settings(client, owner, settings):
+    from tracking.models import TelegramLink
+
+    settings.TELEGRAM_BOT_USERNAME = "dash_bot"
+    assert "Connect Telegram" in client.get("/settings/").content.decode()
+    html = client.post("/settings/telegram/connect/").content.decode()
+    raw = html.split("start=")[1].split('"')[0]
+    assert "https://t.me/dash_bot?start=" in html and f"/start {raw}" in html
+    assert TelegramLink.objects.get().code_hash != raw  # only the hash is kept
+    assert client.get("/settings/telegram/").status_code == 204  # still waiting
+
+    TelegramLink.redeem(raw, 4242, "Askar (@askar)")
+    html = client.get("/settings/telegram/").content.decode()
+    assert "Connected to <strong>Askar (@askar)</strong>" in html
+    assert "Askar (@askar)" in client.get("/settings/").content.decode()
+
+    client.post("/settings/telegram/disconnect/")
+    assert TelegramLink.for_telegram(4242) is None
+    assert "Connect Telegram" in client.get("/settings/").content.decode()

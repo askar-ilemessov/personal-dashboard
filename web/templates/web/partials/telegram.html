@@ -1,0 +1,15 @@
+<div id="telegram" class="telegram">
+{% if link.linked %}
+  <p>Connected to <strong>{{ link.name|default:"your Telegram" }}</strong> since {{ link.linked_at|date:"M j, Y" }}. Message <a href="https://t.me/{{ bot }}" target="_blank" rel="noopener">@{{ bot }}</a> to log; reminders and the weekly review come there too.</p>
+  <button type="button" class="btn quiet" hx-post="{% url 'web:telegram_disconnect' %}" hx-target="#telegram" hx-swap="outerHTML"
+          hx-confirm="Disconnect Telegram? The bot will stop logging to this account.">Disconnect</button>
+{% elif code %}
+  <p><a class="btn" href="https://t.me/{{ bot }}?start={{ code }}" target="_blank" rel="noopener">Open Telegram</a>
+    and press <strong>Start</strong>. The link works once, for 15 minutes.</p>
+  <p class="hint">On another device? Send <code>/start {{ code }}</code> to <a href="https://t.me/{{ bot }}" target="_blank" rel="noopener">@{{ bot }}</a>.</p>
+  <p class="hint" hx-get="{% url 'web:telegram_status' %}" hx-trigger="every 3s" hx-target="#telegram" hx-swap="outerHTML">Waiting for Telegram…</p>
+{% else %}
+  <p>Log by messaging <a href="https://t.me/{{ bot }}" target="_blank" rel="noopener">@{{ bot }}</a>, and get the evening reminder and weekly review there.</p>
+  <button type="button" class="btn" hx-post="{% url 'web:telegram_connect' %}" hx-target="#telegram" hx-swap="outerHTML">Connect Telegram</button>
+{% endif %}
+</div>

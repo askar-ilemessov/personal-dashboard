@@ -11,12 +11,23 @@ from aiogram.client.session.base import BaseSession
 from aiogram.methods import AnswerCallbackQuery, EditMessageText, SendMessage
 from aiogram.types import CallbackQuery, Chat, Message, Update, User
 from asgiref.sync import sync_to_async
+from django.utils import timezone
 
 from bot import replies
 from bot.handlers import build_dispatcher
 from tracking import days, defaults, logbook, metrics
 from tracking.logbook import TrackerLog
-from tracking.models import AppSettings, Entry, Expense, Operation, SleepSession, Tracker, Workout
+from tracking.models import (
+    AppSettings,
+    Entry,
+    Expense,
+    Operation,
+    SleepSession,
+    TelegramLink,
+    Tracker,
+    Workout,
+)
+from tracking.owner import acting_as
 
 OWNER, STRANGER = 4242, 666
 CHAT = Chat(id=OWNER, type="private")
@@ -47,21 +58,29 @@ class FakeSession(BaseSession):
         yield b""
 
 
-class Chatter:
-    """Sends messages and presses buttons as a given user."""
+def link(account, telegram_id=OWNER):
+    """Connect `account` to a Telegram user, the way Settings → Telegram does."""
+    with acting_as(account):
+        code = TelegramLink.new_code()
+    return TelegramLink.redeem(code, telegram_id, "U")
 
-    def __init__(self, account):
+
+class Chatter:
+    """Sends messages and presses buttons as a given Telegram user."""
+
+    def __init__(self):
         self.session = FakeSession()
         self.session.incoming = {}
         self.bot = Bot("4242:TEST", session=self.session, default=DefaultBotProperties(parse_mode="HTML"))
-        self.dispatcher = build_dispatcher(OWNER, account)
+        self.dispatcher = build_dispatcher()
         self.n = 0
 
-    async def say(self, text, user=OWNER):
+    async def say(self, text, user=OWNER, chat=None):
         self.n += 1
         self.session.incoming[self.n] = text
-        message = Message(message_id=self.n, date=datetime.now(UTC), chat=CHAT, text=text,
-                          from_user=User(id=user, is_bot=False, first_name="U"))
+        chat = chat or (CHAT if user == OWNER else Chat(id=user, type="private"))
+        message = Message(message_id=self.n, date=datetime.now(UTC), chat=chat, text=text,
+                          from_user=User(id=user, is_bot=False, first_name="U", username="u"))
         before = len(self.session.calls)
         await self.dispatcher.feed_update(self.bot, Update(update_id=self.n, message=message))
         return self.session.calls[before:]
@@ -96,7 +115,8 @@ def chat(transactional_db, owner):
     s = AppSettings.load()
     s.timezone = "America/Toronto"
     s.save()
-    return Chatter(owner)
+    link(owner)
+    return Chatter()
 
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -104,10 +124,60 @@ value = sync_to_async(metrics.value)
 count = sync_to_async(lambda model: model.objects.count())
 
 
-async def test_strangers_are_ignored(chat):
-    assert await chat.say("/coffee", user=STRANGER) == []
-    assert await chat.say("coffee", user=STRANGER) == []
+async def test_strangers_are_only_told_how_to_connect(chat):
+    for text in ("/coffee", "coffee", "/start", "/start not-a-real-code-at-all"):
+        calls = await chat.say(text, user=STRANGER)
+        assert len(calls) == 1 and isinstance(calls[0], SendMessage) and calls[0].chat_id == STRANGER
+    assert "Settings → Telegram" in calls[0].text
     assert await chat.press("q:coffee", on=Message(message_id=1, date=datetime.now(UTC), chat=CHAT), user=STRANGER) == []
+    assert await count(Entry) == 0
+
+
+async def test_group_chats_are_ignored_even_for_linked_people(chat):
+    assert await chat.say("/coffee", chat=Chat(id=-100, type="group")) == []
+    assert await count(Entry) == 0
+
+
+async def test_linking_with_a_code_from_settings(chat, owner):
+    @sync_to_async
+    def code():
+        with acting_as(owner):
+            return TelegramLink.new_code()
+
+    raw = await code()
+    calls = await chat.say(f"/start {raw}", user=STRANGER)
+    assert calls[0].text.startswith("Connected to <b>me</b>")
+    link = await sync_to_async(TelegramLink.for_telegram)(STRANGER)
+    assert link.user == owner and link.name == "U (@u)"
+    # The account has one Telegram user: the earlier one is replaced.
+    assert await sync_to_async(TelegramLink.for_telegram)(OWNER) is None
+    await chat.say("/coffee", user=STRANGER)
+    assert await count(Entry) == 1
+
+    # Codes work once.
+    calls = await chat.say(f"/start {raw}", user=OWNER)
+    assert "expired or was already used" in calls[0].text
+    assert await sync_to_async(TelegramLink.for_telegram)(OWNER) is None
+
+
+async def test_link_codes_expire(chat, owner):
+    @sync_to_async
+    def expired_code():
+        with acting_as(owner):
+            raw = TelegramLink.new_code()
+            TelegramLink.objects.update(code_expires_at=timezone.now() - timedelta(seconds=1))
+            return raw
+
+    calls = await chat.say(f"/start {await expired_code()}", user=STRANGER)
+    assert "expired" in calls[0].text
+    assert await sync_to_async(TelegramLink.for_telegram)(STRANGER) is None
+
+
+async def test_a_deactivated_account_stops_being_served(chat, owner):
+    owner.is_active = False
+    await owner.asave()
+    calls = await chat.say("/coffee")
+    assert "Settings → Telegram" in calls[0].text
     assert await count(Entry) == 0
 
 

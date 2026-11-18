@@ -101,6 +101,8 @@
       <div class="setup-way"><span class="setup-icon">⌘K</span><div><strong>Quick log, from any page</strong>
         <p class="hint">Press <kbd>⌘K</kbd> (or the Quick log button) and type what happened. For example:</p>
         <p class="setup-examples">{% for e in examples %}<code>{{ e }}</code>{% endfor %}</p></div></div>
+      {% if bot %}<div class="setup-way"><span class="setup-icon">✈</span><div><strong>Telegram</strong>
+        {% include "web/partials/telegram.html" %}</div></div>{% endif %}
       <div class="setup-way"><span class="setup-icon">iOS</span><div><strong>iPhone Shortcuts</strong>
         <p class="hint">Log from the home screen or by voice. A Shortcut needs a token; you can also make one later in Settings.</p>
         <div id="new-token" class="setup-token">{% if has_token %}<p class="hint">You already have a token.</p>{% else %}

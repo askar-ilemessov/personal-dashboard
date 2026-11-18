@@ -95,6 +95,13 @@
   </form>
 </section>
 
+{% if bot %}
+<section class="panel">
+  <h2>Telegram</h2>
+  {% include "web/partials/telegram.html" %}
+</section>
+{% endif %}
+
 <section class="panel">
   <h2>iOS Shortcuts and API tokens</h2>
   <p class="hint" style="margin-top: 0">A Shortcut can log by sending <code>POST {{ api_url }}</code> with the header <code>Authorization: Bearer &lt;token&gt;</code> and a JSON body such as <code>{"text": "woke"}</code>. The README has a step-by-step example.</p>
