@@ -434,6 +434,12 @@ class TelegramLink(OwnedModel):
     code_hash = models.CharField(max_length=64, blank=True, editable=False)
     code_expires_at = models.DateTimeField(null=True, blank=True, editable=False)
     linked_at = models.DateTimeField(null=True, blank=True)
+    # Bot UI state: the live menu message (edited in place) and an open question
+    # ("How much for Groceries?") whose answer is the next reply. See bot/panel.py.
+    panel_message_id = models.BigIntegerField(null=True, blank=True, editable=False)
+    panel_screen = models.CharField(max_length=32, blank=True, editable=False)
+    prompt_message_id = models.BigIntegerField(null=True, blank=True, editable=False)
+    prompt = models.CharField(max_length=64, blank=True, editable=False)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["user"], name="one_telegram_link_per_user")]
