@@ -1,0 +1,46 @@
+{% extends "web/base.html" %}
+{% block title %}Week {{ number }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <p class="sub sub-above">{{ label }}</p>
+    <h1>Week {{ number }}</h1>
+  </div>
+  <div class="actions">
+    <a class="btn" href="{% url 'web:week_of' prev.isoformat %}">‹ Week {{ prev.isocalendar.week }}</a>
+    {% if next %}<a class="btn" href="{% url 'web:week_of' next.isoformat %}">Week {{ next.isocalendar.week }} ›</a>{% endif %}
+    {% if not is_this_week %}<a class="btn primary" href="{% url 'web:week' %}">This week</a>{% endif %}
+  </div>
+</header>
+
+{% if tiles %}
+<section class="tiles" aria-label="Week {{ number }} in numbers">
+  {% for t in tiles %}
+  <div class="tile tile-{{ t.area }}">
+    <span class="tile-label">{{ t.label }}</span>
+    <span class="tile-value">{{ t.value }}</span>
+    <span class="tile-note">{{ t.note }}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+<section class="daycards" aria-label="Days">
+  {% for c in cards %}
+  <article class="daycard{% if c.today %} today{% elif c.future %} future{% endif %}">
+    <a class="daycard-head" href="{{ c.url }}" {% if c.future %}tabindex="-1" aria-disabled="true"{% endif %}>
+      <span class="daycard-n">{{ c.day.day }}</span><span class="daycard-wd">{{ c.day|date:"D" }}</span>
+    </a>
+    {% for i in c.items %}
+    <div class="daycard-row"><i class="dot dot-{{ i.area }}"></i><span>{{ i.label }}</span><b{% if i.done %} class="tick"{% endif %}>{{ i.value }}</b></div>
+    {% endfor %}
+    {% if c.missing %}
+    <div class="daycard-missing">
+      {% for m in c.missing|slice:":3" %}<a class="add-pill" href="{{ c.url }}#fill">+ {{ m }}</a>{% endfor %}
+      {% if c.missing|length > 3 %}<a class="add-pill more" href="{{ c.url }}#fill">{{ c.missing|length|add:"-3" }} more…</a>{% endif %}
+    </div>
+    {% elif not c.future %}<p class="daycard-done">All logged</p>{% endif %}
+  </article>
+  {% endfor %}
+</section>
+{% endblock %}

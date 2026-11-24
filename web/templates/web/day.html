@@ -2,74 +2,71 @@
 {% block title %}{{ day|date:"M j" }}{% endblock %}
 {% block content %}
 <header class="page-head">
-  <div>
-    <h1>{{ day|date:"l, F j, Y" }}</h1>
-    <p class="sub">{% if is_today %}Today{% else %}Backfilling a past day · entries are saved to this date{% endif %}</p>
+  <div class="day-title">
+    <a class="btn round" href="{% url 'web:day' prev.isoformat %}" aria-label="Previous day">‹</a>
+    <div>
+      <p class="sub sub-above">{% if is_today %}Today{% elif is_yesterday %}Yesterday{% else %}{{ day|date:"Y" }}{% endif %} · <a href="{% url 'web:week_of' monday.isoformat %}">Week {{ week_number }}</a></p>
+      <h1>{{ day|date:"l j" }}</h1>
+    </div>
+    {% if next %}<a class="btn round" href="{% url 'web:day' next.isoformat %}" aria-label="Next day">›</a>{% else %}<span class="btn round ghost" aria-hidden="true">›</span>{% endif %}
   </div>
-  <div class="actions">
-    <a class="btn" href="{% url 'web:day' prev.isoformat %}" aria-label="Previous day">‹ Previous</a>
-    {% if next %}<a class="btn" href="{% url 'web:day' next.isoformat %}" aria-label="Next day">Next ›</a>{% endif %}
+  <form class="actions" action="{% url 'web:day_jump' %}" method="get" hx-boost="false">
+    <label class="visually-hidden" for="jump">Go to a date</label>
+    <input type="date" id="jump" name="date" value="{{ day.isoformat }}" max="{{ today.isoformat }}" onchange="this.form.submit()">
     {% if not is_today %}<a class="btn" href="{% url 'web:day' today.isoformat %}">Today</a>{% endif %}
-  </div>
+  </form>
 </header>
 
-<div class="columns wide-left">
-  <div>
-    <section class="panel" id="log">
-      <h2>Log</h2>
-      <div class="controls">{% for c in controls %}{% include "web/partials/control.html" %}{% endfor %}</div>
-      {% include "web/partials/forms.html" with show="sleep workout expense" %}
+{% include "web/partials/week_strip.html" %}
+
+<section class="glance" aria-label="At a glance">
+  {% for g in glance %}<div class="glance-item"><i class="dot dot-{{ g.area }}"></i><span>{{ g.label }}</span><b>{{ g.value }}</b></div>{% endfor %}
+</section>
+
+<div class="home-grid">
+  <div class="home-main">
+    <section class="loglist" id="fill" aria-labelledby="fill-title">
+      <header><h2 id="fill-title">Fill in</h2><span class="count-pill{% if not missing %} quiet{% endif %}">{{ logged_count }} of {{ row_count }} logged</span></header>
+      {% for r in missing %}{% include "web/partials/logrow.html" %}{% empty %}<p class="hint">Everything is logged for this day.</p>{% endfor %}
     </section>
 
-    {% for title, t in sections %}
-    <section class="panel">
-      <h2>{{ title }}</h2>
-      {% include "web/partials/table.html" %}
+    <section class="loglist" aria-labelledby="add-title">
+      <header><h2 id="add-title">Add</h2></header>
+      {% include "web/partials/forms.html" with show="workout expense" %}
     </section>
-    {% endfor %}
   </div>
 
-  <aside>
-    <section class="panel">
-      <div class="cal-head">
-        <a class="btn" href="{% url 'web:day' prev_month.isoformat %}" aria-label="Previous month">‹</a>
-        <strong>{{ day|date:"F Y" }}</strong>
-        {% if next_month %}<a class="btn" href="{% url 'web:day' next_month.isoformat %}" aria-label="Next month">›</a>{% else %}<span class="btn ghost">›</span>{% endif %}
+  <div class="home-side">
+    <section class="loglist" aria-labelledby="tl-title">
+      <header><h2 id="tl-title">Logged</h2><span class="hint">in the order it happened</span></header>
+      {% for i in timeline %}
+      <div class="tl-item">
+        <span class="tl-time">{{ i.time }}</span><i class="dot dot-{{ i.area }}"></i>
+        <div class="tl-body">{{ i.text }}{% if i.sub %}<small>{{ i.sub }}</small>{% endif %}</div>
+        <button class="task-x" hx-post="{% url 'web:row_delete' i.key i.pk %}" hx-swap="none" aria-label="Delete {{ i.text }}" title="Delete (can be undone)">×</button>
       </div>
-      <table class="calendar">
-        <thead><tr><th>M</th><th>T</th><th>W</th><th>T</th><th>F</th><th>S</th><th>S</th></tr></thead>
-        <tbody>
-        {% for week in weeks %}<tr>
-          {% for d in week %}<td>{% if d %}{% if d.future %}<span class="cal-day future">{{ d.date.day }}</span>{% else %}<a class="cal-day level-{{ d.level }}{% if d.selected %} selected{% endif %}{% if d.today %} today{% endif %}" href="{% url 'web:day' d.date.isoformat %}" title="{{ d.count }} of {{ tracker_total }} trackers logged">{{ d.date.day }}</a>{% endif %}{% endif %}</td>{% endfor %}
-        </tr>{% endfor %}
-        </tbody>
-      </table>
-      <p class="legend"><span class="muted">Trackers logged:</span> <span class="swatch level-0"></span> none <span class="swatch level-2"></span> some <span class="swatch level-4"></span> all</p>
+      {% empty %}<p class="hint">Nothing logged yet.</p>{% endfor %}
     </section>
 
-    <section class="panel">
-      <h2>Tags</h2>
+    <details class="loglist more-box"{% if note or tags %} open{% endif %}>
+      <summary><h2>Note and tags</h2></summary>
       <div class="tags">
-        {% for t in tags %}<span class="tag">#{{ t.tag.slug }} <button type="button" class="link" hx-post="{% url 'web:row_delete' 'tag' t.pk %}" hx-swap="none" aria-label="Remove tag {{ t.tag.slug }}">×</button></span>{% empty %}<span class="muted">No tags.</span>{% endfor %}
+        {% for t in tags %}<span class="tag">#{{ t.tag.slug }} <button type="button" class="link" hx-post="{% url 'web:row_delete' 'tag' t.pk %}" hx-swap="none" aria-label="Remove tag {{ t.tag.slug }}">×</button></span>{% endfor %}
       </div>
       <form class="inline-form" hx-post="{% url 'web:log' %}" hx-swap="none" hx-on::after-request="this.reset()">
         <input type="hidden" name="kind" value="tags"><input type="hidden" name="day" value="{{ day_field }}">
         <input name="tags" placeholder="sick, travel, deadline" autocomplete="off" aria-label="Tags" required>
         <button class="btn">Add</button>
       </form>
-    </section>
-
-    <section class="panel">
-      <h2>Note</h2>
       <form class="note-form" hx-post="{% url 'web:log' %}" hx-swap="none">
         <input type="hidden" name="kind" value="note"><input type="hidden" name="day" value="{{ day_field }}">
-        <textarea name="note" rows="5" placeholder="Anything worth remembering about this day." aria-label="Note" required>{{ note.note }}</textarea>
+        <textarea name="note" rows="4" placeholder="Anything worth remembering about this day." aria-label="Note" required>{{ note.note }}</textarea>
         <div class="edit-buttons">
           <button class="btn">Save note</button>
           {% if note %}<button type="button" class="btn quiet" hx-post="{% url 'web:row_delete' 'note' note.pk %}" hx-swap="none">Delete</button>{% endif %}
         </div>
       </form>
-    </section>
-  </aside>
+    </details>
+  </div>
 </div>
 {% endblock %}
