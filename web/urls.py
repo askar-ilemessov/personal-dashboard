@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import home, settings_views, setup_views, views
+from . import home, settings_views, setup_views, views, week
 
 app_name = "web"
 
@@ -9,7 +9,10 @@ urlpatterns = [
     path("tasks/", home.task_add, name="task_add"),
     path("tasks/<int:pk>/toggle/", home.task_toggle, name="task_toggle"),
     path("tasks/<int:pk>/delete/", home.task_delete, name="task_delete"),
-    path("day/<str:day>/", views.day_view, name="day"),
+    path("week/", week.week, name="week"),
+    path("week/<str:start>/", week.week, name="week_of"),
+    path("day/", week.day_jump, name="day_jump"),
+    path("day/<str:day>/", week.day, name="day"),
     path("trends/", views.trends, name="trends"),
     path("habits/", views.habits, name="habits"),
     path("expenses/", views.expenses, name="expenses"),

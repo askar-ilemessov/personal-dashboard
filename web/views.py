@@ -1,7 +1,6 @@
 """Web UI. Views only read through tracking.metrics and write through
 tracking.logbook; there is no business logic here."""
 
-import calendar
 import csv
 import json
 from datetime import date, timedelta
@@ -11,7 +10,7 @@ from urllib.parse import urlencode
 from django.conf import settings as django_settings
 from django.core.paginator import Paginator
 from django.http import Http404, HttpResponse
-from django.shortcuts import get_object_or_404, redirect, render
+from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
@@ -25,10 +24,8 @@ from tracking import days, fmt, logbook, metrics
 from tracking.logbook import DayNoteLog, DayTagLog, ExpenseLog, LogError, TrackerLog, WorkoutLog
 from tracking.models import (
     AppSettings,
-    DayNote,
     DayTag,
     Entry,
-    Expense,
     ExpenseCategory,
     Goal,
     Operation,
@@ -180,51 +177,6 @@ def _first_steps(s, first) -> dict | None:
 
     return {"name": s.user.first_name, "setup": s.setup_step, "logged": first is not None,
             "example": examples()[0]}
-
-
-def day_view(request, day):
-    s = AppSettings.load()
-    day, now = _parse_day(day), days.today(s)
-    if day > now:
-        return redirect("web:day", now.isoformat())
-
-    trackers = list(Tracker.objects.filter(is_active=True))
-    values = {t.slug: metrics.value(f"tracker:{t.slug}", day) for t in trackers}
-
-    # Month calendar shaded by how many trackers were logged each day.
-    first = day.replace(day=1)
-    last = first.replace(day=calendar.monthrange(day.year, day.month)[1])
-    per_day: dict[date, set] = {}
-    for d, slug in Entry.objects.filter(day__range=(first, last)).values_list("day", "tracker__slug"):
-        per_day.setdefault(d, set()).add(slug)
-    weeks = []
-    for week in calendar.Calendar().monthdatescalendar(day.year, day.month):
-        weeks.append([
-            None if d.month != day.month else {
-                "date": d, "future": d > now, "selected": d == day, "today": d == now,
-                "level": min(4, -(-4 * len(per_day.get(d, ())) // max(1, len(trackers)))),
-                "count": len(per_day.get(d, ())),
-            }
-            for d in week
-        ])
-    note = DayNote.objects.filter(day=day).first()
-    return render(request, "web/day.html", {
-        "nav": "today", "day": day, "is_today": day == now, "today": now,
-        "prev": day - timedelta(days=1), "next": day + timedelta(days=1) if day < now else None,
-        "prev_month": first - timedelta(days=1), "next_month": last + timedelta(days=1) if last < now else None,
-        "weeks": weeks, "tracker_total": len(trackers),
-        "controls": [_control(t, values[t.slug], day, now) for t in trackers],
-        "day_field": "" if day == now else day.isoformat(),
-        "categories": ExpenseCategory.objects.filter(is_active=True),
-        "workout_types": Workout.Type.choices,
-        "note": note, "tags": DayTag.objects.filter(day=day).select_related("tag"),
-        "sections": [
-            ("Sleep", _mini_table("sleep", SleepSession.objects.filter(day=day), s)),
-            ("Trackers", _mini_table("dayentry", Entry.objects.filter(day=day), s)),
-            ("Workouts", _mini_table("workout", Workout.objects.filter(day=day), s)),
-            ("Expenses", _mini_table("expense", Expense.objects.filter(day=day), s)),
-        ],
-    })
 
 
 def _detail(request, metric, table_key, queryset, nav, extra=None, filters=None):

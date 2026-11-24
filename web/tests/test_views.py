@@ -534,3 +534,45 @@ def test_connecting_telegram_from_settings(client, owner, settings):
     client.post("/settings/telegram/disconnect/")
     assert TelegramLink.for_telegram(4242) is None
     assert "Connect Telegram" in client.get("/settings/").content.decode()
+
+
+# --- week and day ---------------------------------------------------------------------
+
+
+def test_week_page(client):
+    today = days.today()
+    monday = today - timedelta(days=today.weekday())
+    client.post("/log/", {"kind": "tracker", "tracker": "read", "value": "1"})
+    client.post("/log/", {"kind": "expense", "amount": "20", "category": "food"})
+    html = client.get("/week/").content.decode()
+    assert f"Week {today.isocalendar().week}" in html and "this week" in html
+    assert f'href="/day/{today.isoformat()}/"' in html
+    assert "+ Sleep" in html  # today's missing items
+    assert "$20.00" in html and "Read 20 min" in html
+    # Any date in a week shows that week; future weeks go back to this one.
+    last = client.get(f"/week/{(monday - timedelta(days=3)).isoformat()}/").content.decode()
+    assert "last week" in last and "This week" in last
+    assert client.get(f"/week/{(today + timedelta(days=8)).isoformat()}/").status_code == 302
+    assert client.get("/week/nonsense/").status_code == 404
+
+
+def test_day_view_lists_missing_and_logged(client):
+    yesterday = days.today() - timedelta(days=1)
+    url = f"/day/{yesterday.isoformat()}/"
+    client.post("/log/", {"kind": "tracker", "tracker": "coffee", "value": "2", "day": yesterday.isoformat()})
+    client.post("/log/", {"kind": "workout", "type": "legs", "duration": "45", "day": yesterday.isoformat()})
+    html = client.get(url).content.decode()
+    fill = html.split('id="fill-title"')[1].split('id="add-title"')[0]
+    assert ">Coffee<" not in fill and ">Alcohol<" in fill
+    logged = html.split('id="tl-title"')[1]
+    assert "Coffee 2" in logged and "Legs · 45m" in logged
+    assert "Yesterday" in html
+
+    entry = Entry.objects.get(day=yesterday)
+    ev = events(client.post(f"/row/dayentry/{entry.pk}/delete/"))
+    assert ev["toast"]["op"] and not Entry.objects.filter(day=yesterday).exists()
+
+
+def test_day_jump(client):
+    assert client.get("/day/?date=2026-01-05").url == "/day/2026-01-05/"
+    assert client.get("/day/?date=nope").url == "/"
