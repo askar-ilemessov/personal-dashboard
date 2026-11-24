@@ -1,9 +1,9 @@
 {% load static %}<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Setup · Dashboard</title>
-  <script>(function () { try { var t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {} })();</script>
+  {% include "web/partials/head.html" %}
   <link rel="stylesheet" href="{% static 'web/app.css' %}">
   <script defer src="{% static 'web/vendor/htmx.min.js' %}"></script>
 </head>

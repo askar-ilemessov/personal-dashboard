@@ -58,6 +58,9 @@ uv run ruff check .
 
 ## Web UI conventions
 
+- **Design system: Momentum** (https://claude.ai/artifact/P1moTfhtB6n8w4Em8cXcEJ; its README is the brand book). Tokens live at the top of `app.css` in both themes (`--ground`, `--surface`, `--ink`, area hues `--sleep`/`--habit`/`--money`/`--mood` with `-soft` variants, `--radius-*`); the older short names (`--bg`, `--text`, `--accent` …) are aliases that existing rules and the charts read. Unbounded (`--font-display`) for titles and numbers, Manrope (`--font-text`) for the rest; both from Google Fonts in `partials/head.html`. Colour means an area, never decoration; missing is dashed; everything pressable is a pill at least 44px tall; cards have no borders or shadows.
+- Phones (≤900px): no sidebar; a bottom tab bar (Today, Habits, Money, Trends, More), a floating Quick log button and a More sheet, all in `base.html`. Respect `env(safe-area-inset-*)`. Grids use `minmax(0, 1fr)` / `minmax(min(…, 100%), 1fr)` so nothing scrolls sideways at 375px.
+- Add to Home Screen: `static/web/manifest.webmanifest` (standalone, start `/`) and icons in `static/web/icons/` (regenerate the PNGs from `icon.svg`'s design if it changes). Every full page includes `partials/head.html`.
 - Pages are swapped by HTMX (`hx-boost`); nothing does a full reload. `<main id="content">` re-fetches itself on the `refresh` event.
 - Write endpoints return an empty 200 with an `HX-Trigger` header: `refresh`, `toast` (`{message, op?, error?}`; `op` enables Undo) and `palette-close`. Validation errors are a toast with `error: true`, never a 4xx.
 - Views read through `tracking.metrics` and write through `tracking.logbook` only.
