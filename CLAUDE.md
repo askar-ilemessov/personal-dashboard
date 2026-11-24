@@ -38,6 +38,7 @@ uv run ruff check .
 - `.github/workflows/ci.yml` — CI: ruff; migrations check, `check --deploy` and pytest on Postgres 17; Docker build plus a smoke test of the image.
 - `insights/` — `stats.py` (the stats engine: pure functions, no DB or LLM), `facts.py` (correlations, anomaly flags, weekly facts, all pre-formatted), `review.py` (weekly review: Claude or template writer, number check, Sunday schedule), `ask.py` (Ask my data: fixed read-only query tools and the tool loop).
 - `api/` — token-protected HTTP API for iOS Shortcuts (`POST /api/v1/log`, `POST /api/v1/undo`, `GET /api/v1/today`), built on DRF. `auth.py` holds the bearer-token check and rate limits.
+- `web/home.py` — Home (the Today page): week strip, area tiles, streak card, "Left from <yesterday>" and Today log lists (`partials/logrow.html`), tasks. `insights/highlights.py` picks the streak card's fact; `tracking/tasks.py` reads typed tasks ("call bank fri").
 - `web/settings_views.py` — the Settings screen (general, goals, budgets, trackers, Telegram, API tokens, account, people).
 - `web/invites.py` — invite links (Django's password-reset token on `/welcome/…`); `manage.py invite` prints one.
 - `web/setup_views.py` — onboarding for invited accounts: `Welcome` (set password), five steps on `/setup/<step>/` (about, track, spending, goals, logging), `SetupMiddleware`. Template `web/setup.html`.
@@ -70,6 +71,9 @@ uv run ruff check .
 - Every page requires login (`LoginRequiredMiddleware`). A local `dev` user exists for development; its password is `DEV_PASSWORD` in `.env`.
 - Accounts are invite-only (superusers: Settings → People). The admin is scoped by the same managers, so a superuser sees only their own rows there; admin links show to staff only, so invited users can't yet rename trackers or edit categories, recurring expenses or exchange rates.
 - Dev server for previews: `.claude/launch.json` runs it on port 8765.
+- Home log lists post to `web:log` like every control: counters add with + and *set* the total with − (`mode=set`, via `hx-vals`); sleep takes `range` ("23:30-7:10") or `now=bed|wake` (today only). Rows not logged get the `missing` class (an orange dot). Flags live on Insights, not Home.
+- `Task` is an owned model edited directly by `web/home.py` (not a logged row: no undo, not in metrics). Due dates come from a trailing day word or date in the text; done tasks stay visible, struck through, for the rest of that logical day.
+- The streak card shows one computed fact (`insights.highlights`): a habit's best week (beats the 7 weeks before it, at least 3 days, and not its first week), else a running streak of 3+ days, else a weekly goal met, else days logged last week. Its button ticks the habit for today.
 
 ## Setup (onboarding) conventions
 

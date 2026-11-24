@@ -299,6 +299,84 @@ body.login { display: grid; place-items: center; min-height: 100vh; padding: 1re
 .login-box { width: min(340px, 100%); display: flex; flex-direction: column; gap: 0.9rem; padding: 1.6rem; }
 .login-box label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.86rem; color: var(--text-2); }
 
+/* Home (web/home.py): week strip, area tiles, streak card, log lists, tasks */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.daystrip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-bottom: 1rem; }
+.daystrip a { position: relative; overflow: hidden; min-height: 56px; border-radius: var(--radius-tile); display: flex; flex-direction: column; align-items: center; justify-content: center; background: var(--surface); color: var(--ink); }
+.daystrip a:hover { text-decoration: none; outline: 2px solid var(--line-dashed); outline-offset: -2px; }
+.daystrip .ds-letter { font-size: 0.72rem; font-weight: 800; color: var(--ink-muted); }
+.daystrip .ds-n { font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; }
+.daystrip i { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--habit); }
+.daystrip a.today { background: var(--sleep); color: var(--on-colour); }
+.daystrip a.today .ds-letter { color: var(--on-colour); opacity: 0.85; }
+.daystrip a.future { background: transparent; border: 2px dashed var(--line-dashed); color: var(--ink-faint); }
+.daystrip a.future .ds-letter { color: var(--ink-faint); }
+.daystrip a.selected { outline: 2.5px solid var(--sleep); outline-offset: -2.5px; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+.tile { border-radius: var(--radius-card); padding: 0.95rem 1.05rem; color: var(--on-colour); display: flex; flex-direction: column; gap: 0.1rem; min-height: 108px; }
+.tile:hover { text-decoration: none; filter: brightness(1.08); }
+.tile-label { font-weight: 700; font-size: 0.87rem; opacity: 0.92; }
+.tile-value { font-family: var(--font-display); font-weight: 700; font-size: 1.75rem; letter-spacing: -0.02em; line-height: 1.15; }
+.tile-note { font-size: 0.84rem; font-weight: 600; opacity: 0.92; }
+.tile-sleep { background: var(--sleep); } .tile-habit { background: var(--habit); } .tile-money { background: var(--money); } .tile-mood { background: var(--mood); }
+
+.home-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.home-main, .home-side { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.home-side .panel { margin-bottom: 0; }
+
+.streak-card { background: var(--night); color: var(--on-colour); border-radius: var(--radius-hero); padding: 1.1rem 1.25rem; display: flex; align-items: center; gap: 1rem; }
+.streak-card > div { flex: 1; min-width: 0; }
+.streak-card form { margin: 0; }
+.streak-card p { margin: 0; }
+.streak-label { font-weight: 700; font-size: 0.87rem; color: var(--night-label); }
+.streak-number { font-family: var(--font-display); font-weight: 800; font-size: 2.3rem; line-height: 1.05; letter-spacing: -0.02em; }
+.streak-note { color: var(--night-muted); font-weight: 600; font-size: 0.9rem; }
+.streak-go { width: 64px; height: 64px; border-radius: 50%; border: 0; background: var(--streak); color: var(--on-streak); font-size: 1.7rem; font-weight: 800; cursor: pointer; flex: none; }
+.streak-go:hover { filter: brightness(1.06); }
+
+.loglist { background: var(--surface); border-radius: var(--radius-card); padding: 0.4rem 1.1rem 0.5rem; }
+.loglist > header { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; padding: 0.6rem 0 0.5rem; }
+.loglist > header h2 { margin: 0; }
+.count-pill { background: var(--nudge-soft); color: var(--nudge-text); font-weight: 800; font-size: 0.78rem; border-radius: var(--radius-pill); padding: 0.15rem 0.65rem; }
+.count-pill.quiet { background: var(--surface-sunk); color: var(--ink-muted); }
+.link-quiet { font-weight: 800; font-size: 0.88rem; }
+.logrow { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem 0.8rem; min-height: 54px; border-top: 1px solid var(--line); flex-wrap: wrap; padding: 0.3rem 0; }
+.logrow-name { color: var(--ink); font-weight: 700; }
+.logrow.missing .logrow-name::after { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--nudge-text); margin-left: 0.45rem; vertical-align: middle; }
+.logrow-ctl { display: flex; align-items: center; gap: 0.4rem; margin: 0 0 0 auto; flex-wrap: wrap; justify-content: flex-end; }
+.logrow-value { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; }
+.logrow-sub { color: var(--ink-muted); font-weight: 700; font-size: 0.85rem; }
+.pill-btn { min-height: 40px; padding: 0 0.95rem; border-radius: var(--radius-pill); border: 2px solid var(--ink); background: var(--surface); color: var(--ink); font: inherit; font-weight: 800; cursor: pointer; }
+.pill-btn:hover { background: var(--surface-sunk); }
+.pill-btn.yes { background: var(--habit); border-color: var(--habit); color: var(--on-colour); }
+.pill-btn.quiet { border-color: transparent; background: var(--surface-sunk); color: var(--ink-muted); font-weight: 700; }
+.pill-btn.quiet.on { background: var(--ink-muted); color: var(--surface); }
+.pill-input { width: 6.2rem; min-height: 40px; border-radius: var(--radius-pill); border: 2px solid var(--ink); text-align: center; font-weight: 700; padding: 0 0.7rem; }
+.pill-input.wide { width: 8.6rem; }
+.stepper { display: inline-flex; align-items: center; gap: 0.2rem; border: 2px solid var(--ink); border-radius: var(--radius-pill); }
+.stepper button { width: 40px; height: 38px; border: 0; background: none; color: var(--ink); font: inherit; font-size: 1.2rem; font-weight: 800; cursor: pointer; border-radius: var(--radius-pill); }
+.stepper button:hover { background: var(--surface-sunk); }
+.stepper .logrow-value { min-width: 1.4rem; text-align: center; }
+.dots { display: inline-flex; gap: 5px; }
+.dots button { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--surface-sunk); color: var(--ink-muted); font: inherit; font-weight: 800; cursor: pointer; }
+.dots button:hover { background: var(--line-dashed); color: var(--ink); }
+.dots button.on { background: var(--ink); color: var(--ground); }
+
+.task { display: flex; align-items: center; gap: 0.7rem; min-height: 50px; border-top: 1px solid var(--line); }
+.tick { width: 26px; height: 26px; flex: none; border-radius: 8px; border: 2px solid var(--ink); background: transparent; color: var(--on-colour); font-weight: 800; cursor: pointer; padding: 0; display: grid; place-items: center; }
+.tick:hover { background: var(--habit-soft); }
+.task.done .tick { background: var(--habit); border-color: var(--habit); }
+.task-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.task.done .task-title { color: var(--ink-faint); text-decoration: line-through; }
+.task-due { font-size: 0.82rem; font-weight: 800; color: var(--ink-muted); white-space: nowrap; }
+.task-due.late { color: var(--danger); }
+.task-x { border: 0; background: none; color: var(--ink-faint); font-size: 1.3rem; cursor: pointer; min-width: 36px; min-height: 36px; border-radius: 50%; opacity: 0; }
+.task:hover .task-x, .task-x:focus-visible { opacity: 1; }
+.task-add { display: flex; gap: 0.5rem; padding: 0.7rem 0 0.4rem; border-top: 1px solid var(--line); margin: 0; }
+.task-add input { flex: 1; min-width: 0; border-radius: var(--radius-pill); }
+@media (hover: none) { .task-x { opacity: 1; } }
+
 /* Phones: no sidebar; a bottom tab bar, a Quick log button and a More sheet.
    Safe-area insets keep them clear of the notch and home indicator when the
    app is opened from the Home Screen. */
@@ -321,6 +399,13 @@ body.login { display: grid; place-items: center; min-height: 100vh; padding: 1re
   .trend-grid, .rel-grid { grid-template-columns: 1fr; }
   .kv { grid-template-columns: 1fr; }
   .toast { bottom: calc(5.6rem + env(safe-area-inset-bottom, 0px)); }
+  .home-grid { grid-template-columns: minmax(0, 1fr); }
+  .home-head .actions { display: none; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+  .tile { min-height: 100px; padding: 0.85rem; }
+  .tile-value { font-size: 1.45rem; }
+  .streak-number { font-size: 2rem; }
+  .loglist { padding: 0.3rem 0.95rem 0.4rem; }
 
   .tabbar { display: flex; justify-content: space-around; align-items: center; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; background: var(--surface); border-radius: var(--radius-hero) var(--radius-hero) 0 0; padding: 8px max(10px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); box-shadow: 0 -6px 24px rgb(23 21 49 / 0.08); }
   .tabbar a, .tabbar button { min-width: 58px; min-height: var(--tap-min); display: grid; place-items: center; border-radius: var(--radius-pill); border: 0; background: none; font: inherit; font-weight: 800; font-size: 0.82rem; color: var(--text-2); padding: 0 0.6rem; cursor: pointer; }

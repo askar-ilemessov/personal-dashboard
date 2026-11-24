@@ -114,6 +114,18 @@ def unlogged(day: date) -> list[str]:
     return missing
 
 
+def loggable() -> list[str]:
+    """What `unlogged` checks: every active tracker, and sleep."""
+    keys = [f"tracker:{slug}" for slug in Tracker.objects.filter(is_active=True).values_list("slug", flat=True)]
+    return [*keys, "sleep.duration"]
+
+
+def logged_share(day: date) -> float:
+    """How much of `day` is logged, 0–1, for the week strip."""
+    total = len(loggable())
+    return 1 - len(unlogged(day)) / total if total else 0.0
+
+
 def habit_streaks(tracker: Tracker, today: date) -> tuple[int, int]:
     """(current, longest) run of consecutive done days. Today not being
     logged yet does not break the current streak. A day marked not done

@@ -1,0 +1,10 @@
+<nav class="daystrip" aria-label="This week">
+  {% for d in week %}
+  <a href="{{ d.url }}" class="{% if d.today %}today{% elif d.future %}future{% endif %}{% if d.selected %} selected{% endif %}"
+     {% if d.today %}aria-current="date"{% endif %} aria-label="{{ d.day|date:'l, F j' }}{% if not d.future %}, {{ d.share }}% logged{% endif %}">
+    <span class="ds-letter">{{ d.letter }}</span>
+    <span class="ds-n">{{ d.day.day }}</span>
+    {% if not d.future and not d.today %}<i style="width: {{ d.share }}%"></i>{% endif %}
+  </a>
+  {% endfor %}
+</nav>

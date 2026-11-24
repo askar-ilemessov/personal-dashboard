@@ -255,3 +255,16 @@ def test_seed_needs_to_know_which_account(other):
     assert not Entry.objects.exists()
     with acting_as(other):
         assert Entry.objects.exists()
+
+
+def test_tasks_belong_to_their_account(web, owner, other):
+    from tracking.models import Task
+
+    with acting_as(other):
+        theirs = Task.objects.create(title="Their task")
+    web.post("/tasks/", {"text": "My task"})
+    html = web.get("/").content.decode()
+    assert "My task" in html and "Their task" not in html
+    assert web.post(f"/tasks/{theirs.pk}/toggle/").status_code == 404
+    assert web.post(f"/tasks/{theirs.pk}/delete/").status_code == 404
+    assert Task.all_users.filter(user=other).count() == 1

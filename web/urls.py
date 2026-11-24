@@ -1,11 +1,14 @@
 from django.urls import path
 
-from . import settings_views, setup_views, views
+from . import home, settings_views, setup_views, views
 
 app_name = "web"
 
 urlpatterns = [
-    path("", views.today, name="today"),
+    path("", home.today, name="today"),
+    path("tasks/", home.task_add, name="task_add"),
+    path("tasks/<int:pk>/toggle/", home.task_toggle, name="task_toggle"),
+    path("tasks/<int:pk>/delete/", home.task_delete, name="task_delete"),
     path("day/<str:day>/", views.day_view, name="day"),
     path("trends/", views.trends, name="trends"),
     path("habits/", views.habits, name="habits"),

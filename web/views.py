@@ -171,50 +171,6 @@ def _mini_table(table_key, queryset, s) -> dict:
 # --- pages -----------------------------------------------------------------
 
 
-def today(request):
-    s = AppSettings.load()
-    day = days.today(s)
-    week_start, prev_start = day - timedelta(days=6), day - timedelta(days=13)
-    daily_goals = {g.metric: g for g in Goal.objects.filter(is_active=True, period="day")}
-    first = metrics.first_day()
-
-    cards = []
-    for m in metrics.catalog(habits=False):
-        series = metrics.series(m.key, prev_start, day)
-        current = {d: v for d, v in series.items() if d >= week_start}
-        previous = metrics.comparable({d: v for d, v in series.items() if d < week_start}, first)
-        now_avg = metrics.aggregate(m, current)
-        before_avg = metrics.aggregate(m, previous) if previous else None
-        value = series[day]
-        goal = daily_goals.get(m.key)
-        cards.append({
-            "metric": m, "url": _metric_url(m), "value": fmt.value(m.fmt, value), "logged": value is not None,
-            "spark": charts.sparkline(list(current.values())),
-            "week": fmt.value(m.agg_fmt, now_avg), "week_label": "7-day total" if m.agg == "sum" else "7-day avg",
-            "delta": charts.delta(now_avg, before_avg),
-            "goal": goal, "goal_met": goal.is_met(value) if goal else None,
-        })
-
-    logged = dict(Entry.objects.filter(day=day).order_by("occurred_at", "id").values_list("tracker__slug", "value"))
-    sums = {m.key.split(":", 1)[1]: metrics.value(m.key, day) for m in metrics.catalog() if m.kind == "counter"}
-    trackers = list(Tracker.objects.filter(is_active=True))
-    habits = []
-    for t in (t for t in trackers if t.kind == Tracker.Kind.HABIT):
-        current, longest = metrics.habit_streaks(t, day)
-        habits.append(_control(t, logged.get(t.slug), day, day) | {"streak": current, "longest": longest})
-    unlogged = [
-        _control(t, sums.get(t.slug), day, day)
-        for t in trackers if t.kind != Tracker.Kind.HABIT and t.slug not in logged
-    ]
-    return render(request, "web/today.html", {
-        "nav": "today", "day": day, "cards": cards, "habits": habits, "unlogged": unlogged,
-        "sleep_missing": not SleepSession.objects.filter(day=day, wake_time__isnull=False).exists(),
-        "goals": [g for g in (metrics.goal_progress(g, day) for g in Goal.objects.filter(is_active=True)) if g],
-        "budgets": metrics.budgets(day), "flags": _flags(day)[:3],
-        "first_steps": _first_steps(s, first),
-    })
-
-
 def _first_steps(s, first) -> dict | None:
     """The getting-started card: shown until setup is finished and
     something has been logged."""
@@ -522,9 +478,15 @@ def log(request):
                                   notes=p.get("notes", "").strip(), **when)]
         elif kind == "sleep":
             bed, wake = p.get("bed", "").strip(), p.get("wake", "").strip()
-            if not bed and not wake:
-                raise LogError("Enter a bedtime, a wake time, or both.")
-            text = f"slept {bed}-{wake}" if bed and wake else f"slept {bed}" if bed else f"woke {wake}"
+            span, now = p.get("range", "").strip(), p.get("now", "")
+            if span:  # "23:30-7:10" from the Home log list
+                text = f"slept {span}"
+            elif now in ("bed", "wake"):  # "Going to bed" / "I'm up" buttons, today only
+                text = "slept" if now == "bed" else "woke"
+            elif bed or wake:
+                text = f"slept {bed}-{wake}" if bed and wake else f"slept {bed}" if bed else f"woke {wake}"
+            else:
+                raise LogError("Enter a bedtime, a wake time, or both, like 23:30-7:10.")
             parsed = parse(f"{p['day']} {text}" if p.get("day") else text)
             if not parsed.ok:
                 raise LogError(parsed.errors[0] if parsed.errors else "Couldn't read those times.")

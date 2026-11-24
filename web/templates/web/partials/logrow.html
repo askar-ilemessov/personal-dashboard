@@ -1,0 +1,45 @@
+{# One row of a log list (Momentum LogList). `r` comes from web.home.log_rows. #}
+<div class="logrow{% if not r.logged %} missing{% endif %}">
+  <a class="logrow-name" href="{{ r.url }}">{{ r.name }}</a>
+  <form class="logrow-ctl" hx-post="{% url 'web:log' %}" hx-swap="none">
+    <input type="hidden" name="day" value="{{ r.day }}">
+    {% if r.kind == "sleep" %}
+      <input type="hidden" name="kind" value="sleep">
+      {% if r.logged %}
+        <span class="logrow-value">{{ r.display }}</span><span class="logrow-sub">{{ r.times }}</span>
+      {% elif r.in_bed %}
+        <span class="logrow-sub">In bed since {{ r.in_bed }}</span>
+        <button class="pill-btn yes" name="now" value="wake">I'm up</button>
+      {% else %}
+        <label class="visually-hidden" for="sleep-{{ r.day|default:'today' }}">Sleep times</label>
+        <input class="pill-input wide" id="sleep-{{ r.day|default:'today' }}" name="range" placeholder="23:30-7:10" autocomplete="off" inputmode="numeric">
+        {% if not r.day %}<button class="pill-btn quiet" name="now" value="bed" type="submit" formnovalidate>Going to bed</button>{% endif %}
+      {% endif %}
+    {% else %}
+      <input type="hidden" name="kind" value="tracker"><input type="hidden" name="tracker" value="{{ r.slug }}">
+      {% if r.kind == "habit" %}
+        <button class="pill-btn{% if r.value == 1 %} yes{% endif %}" name="value" value="1" aria-pressed="{% if r.value == 1 %}true{% else %}false{% endif %}">{% if r.value == 1 %}✓ Done{% else %}Did it{% endif %}</button>
+        <button class="pill-btn quiet{% if r.value == 0 %} on{% endif %}" name="value" value="0" aria-pressed="{% if r.value == 0 %}true{% else %}false{% endif %}">Didn't</button>
+      {% elif r.kind == "counter" %}
+        {% if r.logged %}
+        <span class="stepper">
+          {# Minus sets the day's total; plus adds one entry. hx-vals wins over the form's fields. #}
+          <button type="button" hx-post="{% url 'web:log' %}" hx-include="closest form" hx-swap="none"
+                  hx-vals='{"mode": "set", "value": "{{ r.minus }}"}' aria-label="One less {{ r.name|lower }}">−</button>
+          <span class="logrow-value">{{ r.display }}</span>
+          <button name="value" value="1" aria-label="One more {{ r.name|lower }}">+</button>
+        </span>
+        {% else %}
+        <button class="pill-btn quiet" name="value" value="0">None</button>
+        <button class="pill-btn" name="value" value="1">+1</button>
+        {% endif %}
+      {% elif r.kind == "scale" %}
+        <span class="dots">{% for n in r.scale %}<button name="value" value="{{ n }}" class="{% if r.value == n %}on{% endif %}" aria-label="{{ r.name }} {{ n }}" aria-pressed="{% if r.value == n %}true{% else %}false{% endif %}">{{ n }}</button>{% endfor %}</span>
+      {% else %}
+        {% if r.logged %}<span class="logrow-value">{{ r.display }}</span>{% endif %}
+        <label class="visually-hidden" for="dur-{{ r.slug }}-{{ r.day|default:'today' }}">{{ r.name }}</label>
+        <input class="pill-input" id="dur-{{ r.slug }}-{{ r.day|default:'today' }}" name="value" placeholder="{% if r.logged %}Change{% else %}3h20{% endif %}" autocomplete="off">
+      {% endif %}
+    {% endif %}
+  </form>
+</div>
