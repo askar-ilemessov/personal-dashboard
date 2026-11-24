@@ -372,3 +372,24 @@ def test_undoing_a_recurring_run_rewinds_the_schedule():
 def test_inactive_rules_are_skipped():
     rule(start_date=date(2026, 11, 1), is_active=False)
     assert logbook.materialize_recurring(date(2026, 11, 14)) is None
+
+
+def test_sending_the_same_night_again_replaces_it():
+    night = SleepLog(bedtime=local(2026, 11, 14, 23, 30), wake_time=local(2026, 11, 15, 7, 10))
+    log(night)
+    op = log(SleepLog(bedtime=local(2026, 11, 14, 23, 45), wake_time=local(2026, 11, 15, 7, 15)))
+    assert SleepSession.objects.count() == 1
+    assert metrics.value("sleep.duration", date(2026, 11, 15)) == 450
+    logbook.undo(op)  # undo puts the first version back
+    assert metrics.value("sleep.duration", date(2026, 11, 15)) == 460
+
+    # A nap the same day doesn't overlap, so it is its own record.
+    log(SleepLog(bedtime=local(2026, 11, 15, 14, 0), wake_time=local(2026, 11, 15, 14, 40)))
+    assert SleepSession.objects.count() == 2
+
+
+def test_a_whole_night_completes_an_open_bedtime():
+    log(SleepLog(bedtime=local(2026, 11, 14, 23, 40)))
+    log(SleepLog(bedtime=local(2026, 11, 14, 23, 30), wake_time=local(2026, 11, 15, 7, 10)))
+    session = SleepSession.objects.get()
+    assert session.duration_min == 460 and session.day == date(2026, 11, 15)

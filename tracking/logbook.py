@@ -290,7 +290,18 @@ def _apply_sleep(intent: SleepLog, ctx: _Ctx):
     if bed and wake:
         if not timedelta(0) < wake - bed <= timedelta(hours=24):
             raise LogError("Wake time must be after bedtime, within 24 hours.")
-        ctx.create(SleepSession, bedtime=bed, wake_time=wake, day=wake_day(wake))
+        # A night that overlaps one already logged (or an open "went to bed")
+        # replaces it, so sending the same night twice (an iOS Shortcut that
+        # runs again, a correction) never counts it twice.
+        overlapping = (
+            SleepSession.objects.filter(day=wake_day(wake), bedtime__lt=wake, wake_time__gt=bed).first()
+            or SleepSession.objects.filter(wake_time__isnull=True, bedtime__lt=wake,
+                                           bedtime__gte=bed - OPEN_SESSION_WINDOW).order_by("-bedtime").first()
+        )
+        if overlapping:
+            ctx.update(overlapping, bedtime=bed, wake_time=wake, day=wake_day(wake))
+        else:
+            ctx.create(SleepSession, bedtime=bed, wake_time=wake, day=wake_day(wake))
     elif bed:
         provisional = intent.day or days.logical_day(bed, s) + timedelta(days=1)
         ctx.create(SleepSession, bedtime=bed, day=provisional)

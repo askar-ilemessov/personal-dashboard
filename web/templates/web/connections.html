@@ -1,0 +1,74 @@
+{% extends "web/base.html" %}
+{% block title %}Connections{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><p class="sub sub-above"><a href="{% url 'web:settings' %}">Settings</a></p><h1>Connections</h1></div>
+</header>
+<p class="hint intro">Places data can come from without typing it. Each one is optional.</p>
+
+<div class="conn-grid">
+  <section class="loglist conn" aria-labelledby="c-weather">
+    <header><h2 id="c-weather">Weather</h2><span class="count-pill{% if not settings.weather_place %} quiet{% endif %}">{% if settings.weather_place %}On Home{% else %}Off{% endif %}</span></header>
+    <p>Today's forecast on Home, from <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>. Free, no account. Only the place you pick is sent.</p>
+    {% if settings.weather_place %}
+    <div class="conn-row"><span>Showing <b>{{ settings.weather_place }}</b></span>
+      <button class="btn quiet" hx-post="{% url 'web:weather_clear' %}" hx-swap="none">Remove</button></div>
+    {% endif %}
+    <form class="conn-row" hx-post="{% url 'web:weather_search' %}" hx-target="#places" hx-swap="innerHTML">
+      <label class="visually-hidden" for="place">City</label>
+      <input id="place" name="q" placeholder="{% if settings.weather_place %}Change city{% else %}Your city{% endif %}" autocomplete="off" required>
+      <button class="btn">Find</button>
+    </form>
+    <div id="places"></div>
+  </section>
+
+  <section class="loglist conn" aria-labelledby="c-cal">
+    <header><h2 id="c-cal">Calendar</h2><span class="count-pill{% if not calendar %} quiet{% endif %}">{% if calendar %}On Home{% else %}Off{% endif %}</span></header>
+    <p>Today's events on Home, read from your calendar's private address. It's read-only and checked every 15 minutes.</p>
+    {% if calendar %}
+    <div class="conn-row"><span>Connected <code>{{ calendar }}</code></span>
+      <button class="btn quiet" hx-post="{% url 'web:calendar_clear' %}" hx-swap="none">Disconnect</button></div>
+    {% endif %}
+    <form class="conn-row" hx-post="{% url 'web:calendar_set' %}" hx-swap="none" hx-on::after-request="if (event.detail.successful) this.reset()">
+      <label class="visually-hidden" for="cal-url">Private calendar address</label>
+      <input id="cal-url" name="url" type="url" placeholder="https://… or webcal://…" autocomplete="off" required>
+      <button class="btn">Connect</button>
+    </form>
+    <details class="conn-help"><summary>Where do I find it?</summary>
+      <ul>
+        <li><b>Google Calendar</b> on a computer: Settings → your calendar → Integrate calendar → <i>Secret address in iCal format</i>.</li>
+        <li><b>iCloud</b>: Calendar app → the calendar's info → Public Calendar on → copy the link.</li>
+        <li><b>Outlook</b>: Settings → Calendar → Shared calendars → Publish a calendar → ICS link.</li>
+      </ul>
+      <p>Anyone with this address can read that calendar, so it's stored on your account only and never shown again in full.</p>
+    </details>
+  </section>
+
+  <section class="loglist conn" aria-labelledby="c-sleep">
+    <header><h2 id="c-sleep">Sleep from Apple Health</h2></header>
+    <p>An iPhone Shortcut can send last night's sleep each morning, so you don't have to type it. It uses your API token; nothing to install.</p>
+    {% if not has_token %}<p><a class="btn" href="{% url 'web:settings' %}#tokens">Create an API token first</a></p>{% endif %}
+    <details class="conn-help" open><summary>Set it up (about 3 minutes)</summary>
+      <ol>
+        <li>Shortcuts app → <b>Automation</b> → <b>+</b> → <b>Time of Day</b>, e.g. 10:00 daily → <b>Run Immediately</b>.</li>
+        <li>Add <b>Find Health Samples</b>: Type <i>Sleep</i>, Start Date <i>is in the last 1 day</i>, Value <i>is not</i> <i>In Bed</i> and <i>is not</i> <i>Awake</i>, sort by Start Date, oldest first.</li>
+        <li>Add <b>Get Item from List</b> → First Item, then <b>Format Date</b> on its Start Date → Custom <code>HH:mm</code>. Do the same with <b>Last Item</b> and its End Date.</li>
+        <li>Add <b>Text</b>: <code>slept [first time]-[last time]</code>.</li>
+        <li>Add <b>Get Contents of URL</b>: <code>{{ api_url }}</code>, Method POST, Header <code>Authorization</code> = <code>Bearer &lt;your token&gt;</code>, Request Body JSON with <code>text</code> = the Text.</li>
+      </ol>
+      <p>Run it once by hand and compare with the Health app. Sleep logged twice for the same night is replaced, not doubled.</p>
+    </details>
+  </section>
+
+  <section class="loglist conn" aria-labelledby="c-tg">
+    <header><h2 id="c-tg">Telegram</h2><span class="count-pill{% if not telegram %} quiet{% endif %}">{% if telegram %}Connected{% else %}Off{% endif %}</span></header>
+    <p>Log by message, get the evening check-in and the Sunday review.</p>
+    {% if bot %}<a class="btn" href="{% url 'web:settings' %}#telegram">{% if telegram %}Manage{% else %}Connect Telegram{% endif %}</a>{% else %}<p class="hint">Telegram isn't set up on this server.</p>{% endif %}
+  </section>
+
+  <section class="loglist conn later" aria-labelledby="c-later">
+    <header><h2 id="c-later">Coming later</h2></header>
+    <p><b>Email receipts</b> turned into spending drafts you confirm, and <b>bank statements</b> (CSV) matched to categories. Both would arrive as drafts, never saved without you.</p>
+  </section>
+</div>
+{% endblock %}

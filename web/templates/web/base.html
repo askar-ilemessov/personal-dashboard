@@ -59,6 +59,7 @@
     <a href="{% url 'web:exercise' %}" {% if nav == "exercise" %}class="active"{% endif %}>Exercise</a>
     <a href="{% url 'web:insights' %}" {% if nav == "insights" %}class="active"{% endif %}>Insights</a>
     <a href="{% url 'web:settings' %}" {% if nav == "settings" %}class="active"{% endif %}>Settings</a>
+    <a href="{% url 'web:connections' %}">Connections</a>
     <button type="button" onclick="toggleTheme()">Light / dark</button>
     <form method="post" action="{% url 'logout' %}" hx-boost="false">{% csrf_token %}<button>Sign out</button></form>
   </div>

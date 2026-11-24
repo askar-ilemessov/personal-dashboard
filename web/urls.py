@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import home, settings_views, setup_views, views, week
+from . import connections, home, people, settings_views, setup_views, views, week
 
 app_name = "web"
 
@@ -36,6 +36,13 @@ urlpatterns = [
     path("settings/telegram/", settings_views.telegram_status, name="telegram_status"),
     path("settings/telegram/connect/", settings_views.telegram_connect, name="telegram_connect"),
     path("settings/telegram/disconnect/", settings_views.telegram_disconnect, name="telegram_disconnect"),
+    path("people/", people.people, name="people"),
+    path("connections/", connections.page, name="connections"),
+    path("connections/weather/search/", connections.weather_search, name="weather_search"),
+    path("connections/weather/", connections.weather_set, name="weather_set"),
+    path("connections/weather/clear/", connections.weather_clear, name="weather_clear"),
+    path("connections/calendar/", connections.calendar_set, name="calendar_set"),
+    path("connections/calendar/clear/", connections.calendar_clear, name="calendar_clear"),
     path("settings/invite/", settings_views.invite, name="invite"),
     path("setup/", setup_views.start, name="setup_start"),
     path("setup/<str:name>/", setup_views.step, name="setup"),

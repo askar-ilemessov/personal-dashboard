@@ -493,6 +493,37 @@ body.login { display: grid; place-items: center; min-height: 100vh; padding: 1re
 .sday.future { background: transparent; border: 2px dashed var(--line-dashed); }
 .sday.spent { background: var(--money-soft); }
 
+/* People (web/people.py) */
+.usage-bars { display: inline-flex; align-items: flex-end; gap: 3px; height: 26px; }
+.usage-bars i { width: 8px; min-height: 3px; border-radius: 3px; background: var(--sleep); }
+.usage-bars i.zero { background: var(--line-dashed); }
+.table.people td { vertical-align: middle; }
+h2 .link-quiet { margin-left: 0.5rem; font-family: var(--font-text); }
+
+/* Connections and the Home weather/calendar */
+.intro { margin: -0.6rem 0 1rem; }
+.conn-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 1rem; align-items: start; }
+.conn p { margin: 0.2rem 0 0.7rem; color: var(--ink-muted); font-weight: 600; }
+.conn-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; justify-content: space-between; padding: 0.3rem 0 0.6rem; margin: 0; }
+.conn-row input { flex: 1; min-width: 10rem; border-radius: var(--radius-pill); }
+.conn-row code { overflow-wrap: anywhere; }
+.conn-help { border-top: 1px solid var(--line); padding: 0.6rem 0 0.4rem; }
+.conn-help summary { cursor: pointer; font-weight: 800; color: var(--link); }
+.conn-help ol, .conn-help ul { margin: 0.6rem 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.4rem; font-weight: 600; }
+.conn-help code { overflow-wrap: anywhere; }
+.conn.later { background: transparent; border: 2px dashed var(--line-dashed); }
+.places { list-style: none; margin: 0 0 0.6rem; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.places form { margin: 0; }
+.weather-line { margin: 0.35rem 0 0; font-weight: 700; color: var(--ink-muted); }
+.weather-line b { font-family: var(--font-display); color: var(--ink); font-size: 1.1rem; }
+.weather-line .rain { color: var(--link); }
+.ev { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: 0.6rem; align-items: baseline; min-height: 46px; border-top: 1px solid var(--line); padding: 0.55rem 0; }
+.ev-time { font-weight: 800; font-size: 0.85rem; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.ev-title { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.ev-title small { display: block; color: var(--ink-muted); font-weight: 600; }
+.ev.past { opacity: 0.55; }
+.ev.next .ev-time { color: var(--link); }
+
 /* Phones: no sidebar; a bottom tab bar, a Quick log button and a More sheet.
    Safe-area insets keep them clear of the notch and home indicator when the
    app is opened from the Home Screen. */

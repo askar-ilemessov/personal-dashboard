@@ -17,6 +17,7 @@ from tracking import days, fmt, metrics
 from tracking import tasks as task_text
 from tracking.models import AppSettings, ExpenseCategory, Goal, SleepSession, Task, Tracker
 
+from . import feeds
 from .views import _error, _events, _first_steps
 
 WEEKDAY_LETTERS = "MTWTFSS"
@@ -35,6 +36,9 @@ def today(request):
         "tiles": tiles(day, s), "highlight": highlights.highlight(day),
         "left": left, "today_rows": log_rows(day, day, s),
         "tasks": task_list(day, s), "goals": goals, "budgets": metrics.budgets(day),
+        "weather": feeds.weather(s.weather_lat, s.weather_lon, s.timezone) if s.weather_lat is not None else None,
+        "events": feeds.events_on(s.calendar_url, day, s.tz) if s.calendar_url else None,
+        "calendar_on": bool(s.calendar_url),
         "first_steps": _first_steps(s, metrics.first_day()),
     })
 

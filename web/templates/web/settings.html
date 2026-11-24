@@ -97,14 +97,19 @@
   </form>
 </section>
 
-{% if bot %}
 <section class="panel">
+  <h2>Connections</h2>
+  <p style="margin-top: 0">Weather and your calendar on Home, and sleep from Apple Health. <a href="{% url 'web:connections' %}">Set up connections ›</a></p>
+</section>
+
+{% if bot %}
+<section class="panel" id="telegram">
   <h2>Telegram</h2>
   {% include "web/partials/telegram.html" %}
 </section>
 {% endif %}
 
-<section class="panel">
+<section class="panel" id="tokens">
   <h2>iOS Shortcuts and API tokens</h2>
   <p class="hint" style="margin-top: 0">A Shortcut can log by sending <code>POST {{ api_url }}</code> with the header <code>Authorization: Bearer &lt;token&gt;</code> and a JSON body such as <code>{"text": "woke"}</code>. The README has a step-by-step example.</p>
   <table class="table">
@@ -131,7 +136,7 @@
 
 {% if user.is_superuser %}
 <section class="panel">
-  <h2>People</h2>
+  <h2 id="people">People <a class="link-quiet" href="{% url 'web:people' %}">Usage ›</a></h2>
   <p class="hint" style="margin-top: 0">Each account has its own trackers, categories, goals and data. Nobody else can see yours.</p>
   <table class="table">
     <tbody>
