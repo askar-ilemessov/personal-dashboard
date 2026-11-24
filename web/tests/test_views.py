@@ -71,12 +71,78 @@ def test_pages_render_with_no_data_at_all(client):
         assert client.get(path).status_code == 200, path
 
 
-def test_today_separates_unlogged_from_zero(client):
+def _row(html, name):
+    """The log-list row for `name` in the Today list."""
+    today = html.split('id="today-title"')[1]
+    return next(chunk for chunk in today.split('<div class="logrow') if f">{name}</a>" in chunk)
+
+
+def test_home_separates_unlogged_from_zero(client):
     client.post("/log/", {"kind": "tracker", "tracker": "alcohol", "value": "0"})
     html = client.get("/").content.decode()
-    unlogged = html.split("Still unlogged today")[1].split('class="cards"')[0]
-    assert "Coffee" in unlogged and "Alcohol" not in unlogged
-    assert "Not logged" in html  # cards show the gap in words
+    assert "missing" in _row(html, "Coffee") and "missing" not in _row(html, "Alcohol")
+    assert "Not logged yet" in html  # the sleep tile says so in words
+
+
+def test_home_lists_what_yesterday_is_missing(client):
+    yesterday = (days.today() - timedelta(days=1)).isoformat()
+    html = client.get("/").content.decode()
+    left = html.split('id="left-title"')[1].split('id="today-title"')[0]
+    assert "Coffee" in left and f'value="{yesterday}"' in left
+    client.post("/log/", {"kind": "tracker", "tracker": "coffee", "value": "2", "day": yesterday})
+    left = client.get("/").content.decode().split('id="left-title"')[1].split('id="today-title"')[0]
+    assert ">Coffee<" not in left
+
+
+def test_home_week_strip_and_tiles(client):
+    today = days.today()
+    client.post("/log/", {"kind": "expense", "amount": "12.50", "category": "food"})
+    client.post("/log/", {"kind": "workout", "type": "legs", "duration": "45"})
+    html = client.get("/").content.decode()
+    monday = today - timedelta(days=today.weekday())
+    assert f'href="/day/{monday.isoformat()}/"' in html and 'aria-current="date"' in html
+    assert f"Week {today.isocalendar().week}" in html
+    assert "$12.50" in html and "1 of 4" in html and "45m today" in html
+
+
+def test_home_counter_stepper_sets_the_total(client):
+    today = days.today()
+    client.post("/log/", {"kind": "tracker", "tracker": "coffee", "value": "1"})
+    client.post("/log/", {"kind": "tracker", "tracker": "coffee", "value": "1"})
+    assert 'value": "1"' in _row(client.get("/").content.decode(), "Coffee")  # minus goes to 1
+    client.post("/log/", {"kind": "tracker", "tracker": "coffee", "value": "1", "mode": "set"})
+    assert metrics.value("tracker:coffee", today) == 1
+
+
+def test_sleep_from_the_log_list(client):
+    today = days.today()
+    assert "refresh" in events(client.post("/log/", {"kind": "sleep", "range": "23:30-7:10"}))
+    assert metrics.value("sleep.duration", today) == 460
+    assert events(client.post("/log/", {"kind": "sleep"}))["toast"]["error"]
+    assert "Bedtime" in events(client.post("/log/", {"kind": "sleep", "now": "bed"}))["toast"]["message"]
+
+
+def test_tasks(client):
+    from tracking.models import Task
+
+    today = days.today()
+    assert events(client.post("/tasks/", {"text": "  "}))["toast"]["error"]
+    ev = events(client.post("/tasks/", {"text": "call the bank tomorrow"}))
+    assert ev["toast"]["message"] == "Added: Call the bank · due tomorrow"
+    task = Task.objects.get()
+    assert task.due == today + timedelta(days=1)
+    assert "Call the bank" in client.get("/").content.decode()
+
+    client.post(f"/tasks/{task.pk}/toggle/")
+    task.refresh_from_db()
+    assert task.done_at is not None
+    html = client.get("/").content.decode()
+    assert 'class="task done"' in html  # done today stays visible, struck through
+    client.post(f"/tasks/{task.pk}/toggle/")
+    task.refresh_from_db()
+    assert task.done_at is None
+    client.post(f"/tasks/{task.pk}/delete/")
+    assert not Task.objects.exists()
 
 
 def test_day_view_and_future_dates(client, seeded):
@@ -303,7 +369,7 @@ def test_ask_box(client, settings, monkeypatch):
     assert "Your longest streak is 0 days." in html and "habit_streaks" in html and "1 query" in html
 
 
-def test_today_shows_flags(client):
+def test_flags_are_on_insights_not_home(client):
     from datetime import timedelta as td
 
     today = days.today()
@@ -312,8 +378,8 @@ def test_today_shows_flags(client):
     for i in range(20, 0, -1):
         client.post("/log/", {"kind": "expense", "amount": 10 + i % 9, "category": "food", "day": (today - td(days=i)).isoformat()})
     client.post("/log/", {"kind": "expense", "amount": "900", "category": "shopping", "day": (today - td(days=2)).isoformat()})
-    html = client.get("/").content.decode()
-    assert "Spending spike on" in html
+    assert "Spending spike on" in client.get("/insights/").content.decode()
+    assert "Spending spike on" not in client.get("/").content.decode()  # flags moved off Home
 
 
 # --- settings ---------------------------------------------------------------------

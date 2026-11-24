@@ -491,3 +491,19 @@ class TelegramLink(OwnedModel):
     def unlink(self):
         self.telegram_id, self.name, self.linked_at = None, "", None
         self.save(update_fields=["telegram_id", "name", "linked_at"])
+
+
+class Task(OwnedModel):
+    """A to-do on Home. Not a logged row: tasks are edited directly and
+    are not part of metrics or undo history."""
+
+    title = models.CharField(max_length=200)
+    due = models.DateField(null=True, blank=True)
+    done_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = [models.F("due").asc(nulls_last=True), "created_at"]
+
+    def __str__(self):
+        return self.title

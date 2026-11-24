@@ -1,13 +1,18 @@
 {% extends "web/base.html" %}
 {% block title %}Today{% endblock %}
 {% block content %}
-<header class="page-head">
-  <div><h1>Today</h1><p class="sub">{{ day|date:"l, F j" }}</p></div>
+<header class="page-head home-head">
+  <div>
+    <h1>{{ day|date:"l j" }}</h1>
+    <p class="sub">Week {{ week_number }} · {{ week_start|date:"M j" }} – {{ week_end|date:"M j" }}</p>
+  </div>
   <div class="actions">
-    <a class="btn" href="{% url 'web:day' day.isoformat %}">Day view &amp; backfill</a>
+    <a class="btn" href="{% url 'web:day' day.isoformat %}">Day view</a>
     <button type="button" class="btn primary" @click="$dispatch('palette-open')">Quick log <kbd>⌘K</kbd></button>
   </div>
 </header>
+
+{% include "web/partials/week_strip.html" %}
 
 {% if first_steps %}
 <section class="panel first-steps">
@@ -22,50 +27,71 @@
 </section>
 {% endif %}
 
-{% if unlogged or sleep_missing %}
-<section class="panel">
-  <h2>Still unlogged today</h2>
-  <div class="controls">
-    {% if sleep_missing %}
-    <div class="control"><div class="control-label"><a href="{% url 'web:sleep' %}">Sleep</a><span class="muted">not logged</span></div>
-      <div class="control-actions"><a class="chip" href="{% url 'web:day' day.isoformat %}#log">Add times</a></div></div>
-    {% endif %}
-    {% for c in unlogged %}{% include "web/partials/control.html" %}{% endfor %}
-  </div>
-</section>
-{% endif %}
-
-{% if flags %}
-<section class="panel">
-  <h2><a href="{% url 'web:insights' %}">Flags</a></h2>
-  <ul class="flags">{% for f in flags %}<li><a href="{{ f.url }}"><strong>{{ f.title }}</strong></a> <span class="muted">{{ f.detail }}</span></li>{% endfor %}</ul>
-</section>
-{% endif %}
-
-<section class="cards">
-  {% for card in cards %}
-  <a class="card" href="{{ card.url }}">
-    <div class="card-top">
-      <span class="card-name">{{ card.metric.name }}</span>
-      {% if card.goal %}<span class="status {% if card.goal_met is None %}muted{% elif card.goal_met %}good{% else %}bad{% endif %}" title="{{ card.goal.name }}">{% if card.goal_met is None %}goal{% elif card.goal_met %}✓ goal{% else %}! goal{% endif %}</span>{% endif %}
-    </div>
-    <div class="card-main">
-      <span class="card-value{% if not card.logged %} unlogged{% endif %}">{% if card.logged %}{{ card.value }}{% else %}Not logged{% endif %}</span>
-      {{ card.spark }}
-    </div>
-    <div class="card-foot">
-      <span>{{ card.week_label }} {{ card.week }}</span>
-      {% include "web/partials/delta.html" with d=card.delta f=card.metric.agg_fmt label="vs prior week" %}
-    </div>
+<section class="tiles" aria-label="Today at a glance">
+  {% for t in tiles %}
+  <a class="tile tile-{{ t.area }}" href="{{ t.url }}">
+    <span class="tile-label">{{ t.label }}</span>
+    <span class="tile-value">{{ t.value }}</span>
+    <span class="tile-note">{{ t.note }}</span>
   </a>
   {% endfor %}
 </section>
 
-<div class="columns">
-  <section class="panel">
-    <h2><a href="{% url 'web:habits' %}">Habits</a></h2>
-    <div class="controls stacked">{% for c in habits %}{% include "web/partials/control.html" %}{% endfor %}</div>
-  </section>
-  <div>{% include "web/partials/progress.html" %}</div>
+<div class="home-grid">
+  <div class="home-main">
+    {% if highlight %}
+    <section class="streak-card">
+      <div>
+        <p class="streak-label">{{ highlight.label }}</p>
+        <p class="streak-number">{{ highlight.value }}</p>
+        <p class="streak-note">{{ highlight.note }}</p>
+      </div>
+      {% if highlight.habit and not highlight.done_today %}
+      <form hx-post="{% url 'web:log' %}" hx-swap="none">
+        <input type="hidden" name="kind" value="tracker"><input type="hidden" name="tracker" value="{{ highlight.habit }}">
+        <button class="streak-go" name="value" value="1" aria-label="Mark it done today">✓</button>
+      </form>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if left %}
+    <section class="loglist" aria-labelledby="left-title">
+      <header><h2 id="left-title">Left from {{ yesterday|date:"l" }}</h2><span class="count-pill">{{ left|length }}</span></header>
+      {% for r in left %}{% include "web/partials/logrow.html" %}{% endfor %}
+    </section>
+    {% endif %}
+
+    <section class="loglist" id="log" aria-labelledby="today-title">
+      <header><h2 id="today-title">Today</h2><a class="link-quiet" href="{% url 'web:day' day.isoformat %}">Day view ›</a></header>
+      {% for r in today_rows %}{% include "web/partials/logrow.html" %}{% endfor %}
+    </section>
+  </div>
+
+  <div class="home-side">
+    <section class="loglist tasks" aria-labelledby="tasks-title">
+      <header><h2 id="tasks-title">Tasks</h2>{% if tasks.open %}<span class="count-pill quiet">{{ tasks.open|length }} open</span>{% endif %}</header>
+      {% for item in tasks.open %}
+      <div class="task">
+        <button class="tick" hx-post="{% url 'web:task_toggle' item.task.pk %}" hx-swap="none" aria-label="Mark “{{ item.task.title }}” done"></button>
+        <span class="task-title">{{ item.task.title }}</span>
+        {% if item.due %}<span class="task-due{% if item.late %} late{% endif %}">{{ item.due }}</span>{% endif %}
+        <button class="task-x" hx-post="{% url 'web:task_delete' item.task.pk %}" hx-swap="none" aria-label="Delete “{{ item.task.title }}”">×</button>
+      </div>
+      {% empty %}<p class="hint">Nothing to do. Add something below.</p>{% endfor %}
+      {% for t in tasks.done %}
+      <div class="task done">
+        <button class="tick" hx-post="{% url 'web:task_toggle' t.pk %}" hx-swap="none" aria-label="Reopen “{{ t.title }}”">✓</button>
+        <span class="task-title">{{ t.title }}</span>
+      </div>
+      {% endfor %}
+      <form class="task-add" hx-post="{% url 'web:task_add' %}" hx-swap="none" hx-on::after-request="if (event.detail.successful) this.reset()">
+        <label class="visually-hidden" for="task-text">New task</label>
+        <input id="task-text" name="text" placeholder="Call the bank fri" autocomplete="off" required>
+        <button class="btn">Add</button>
+      </form>
+    </section>
+    {% include "web/partials/progress.html" %}
+  </div>
 </div>
 {% endblock %}
