@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}Today{% endblock %} · Dashboard</title>
-  <script>(function () { try { var t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {} })();</script>
+  {% include "web/partials/head.html" %}
   <link rel="stylesheet" href="{% static 'web/app.css' %}">
   <script defer src="{% static 'web/vendor/htmx.min.js' %}"></script>
   <script defer src="{% static 'web/vendor/chart.umd.min.js' %}"></script>
@@ -39,6 +39,27 @@
         hx-target="this" hx-swap="outerHTML" hx-disinherit="*">
     {% block content %}{% endblock %}
   </main>
+</div>
+
+{# Phones: bottom tab bar, a Quick log button and a sheet with everything else. #}
+<div x-data="{ more: false }" @keydown.escape.window="more = false">
+  <nav class="tabbar" aria-label="Sections">
+    <a href="{% url 'web:today' %}" {% if nav == "today" %}class="active" aria-current="page"{% endif %}>Today</a>
+    <a href="{% url 'web:habits' %}" {% if nav == "habits" %}class="active" aria-current="page"{% endif %}>Habits</a>
+    <a href="{% url 'web:expenses' %}" {% if nav == "expenses" %}class="active" aria-current="page"{% endif %}>Money</a>
+    <a href="{% url 'web:trends' %}" {% if nav == "trends" %}class="active" aria-current="page"{% endif %}>Trends</a>
+    <button type="button" @click="more = true" :aria-expanded="more" {% if nav == "sleep" or nav == "exercise" or nav == "insights" or nav == "settings" %}class="active"{% endif %}>More</button>
+  </nav>
+  <button type="button" class="fab" aria-label="Quick log" @click="$dispatch('palette-open')">+</button>
+  <div class="more-scrim" :class="{open: more}" @click="more = false"></div>
+  <div class="more-sheet" :class="{open: more}" role="dialog" aria-label="More" @click="if ($event.target.closest('a')) more = false">
+    <a href="{% url 'web:sleep' %}" {% if nav == "sleep" %}class="active"{% endif %}>Sleep</a>
+    <a href="{% url 'web:exercise' %}" {% if nav == "exercise" %}class="active"{% endif %}>Exercise</a>
+    <a href="{% url 'web:insights' %}" {% if nav == "insights" %}class="active"{% endif %}>Insights</a>
+    <a href="{% url 'web:settings' %}" {% if nav == "settings" %}class="active"{% endif %}>Settings</a>
+    <button type="button" onclick="toggleTheme()">Light / dark</button>
+    <form method="post" action="{% url 'logout' %}" hx-boost="false">{% csrf_token %}<button>Sign out</button></form>
+  </div>
 </div>
 
 <div class="overlay" x-data="palette" :class="{open: open}" @palette-open.window="show()"

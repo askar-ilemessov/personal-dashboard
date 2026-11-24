@@ -1,0 +1,14 @@
+{% load static %}{# Shared by every full page: fonts, theme, and what the phone needs to open it from the Home Screen like an app. #}
+<script>(function () { try { var t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {} })();</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Manrope:wght@500;600;700;800&display=swap">
+<link rel="manifest" href="{% static 'web/manifest.webmanifest' %}">
+<link rel="icon" href="{% static 'web/icons/icon.svg' %}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{% static 'web/icons/apple-touch-icon.png' %}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Dashboard">
+<meta name="theme-color" content="#F2F1FA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121120" media="(prefers-color-scheme: dark)">
