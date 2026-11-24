@@ -30,7 +30,7 @@ from tracking.models import (
 )
 
 from . import invites
-from .views import _error, _events
+from .views import RANGES, _error, _events
 
 ADMIN_LINKS = [
     ("Expense categories", "admin:tracking_expensecategory_changelist"),
@@ -81,7 +81,7 @@ def page(request):
         goals.append({"goal": g, "metric": m, "target": fmt.value(m.fmt, g.target) if m else g.target})
     return render(request, "web/settings.html", {
         "nav": "settings", "settings": s, "timezones": days.zone_choices(),
-        "currencies": CURRENCIES, "currency_locked": currency_locked(),
+        "currencies": CURRENCIES, "currency_locked": currency_locked(), "ranges": RANGES,
         "goals": goals, "goal_metrics": _goal_metrics(),
         "budget_rows": [{"category": c, "amount": current.get(c.pk)} for c in ExpenseCategory.objects.filter(is_active=True)],
         "trackers": Tracker.objects.all(), "kinds": Tracker.Kind.choices,
@@ -105,6 +105,10 @@ def general(request):
         s.day_start = _time(p.get("day_start"), "Day start")
         s.reminder_time = _time(p.get("reminder_time"), "Reminder time")
         s.weekly_review_time = _time(p.get("weekly_review_time"), "Review time")
+        if p.get("default_range"):
+            if p["default_range"] not in {k for k, _, _ in RANGES}:
+                raise Invalid("Pick a range from the list.")
+            s.default_range = p["default_range"]
         if p.get("currency") and p["currency"] != s.default_currency:
             if currency_locked():
                 raise Invalid("The main currency can't change once you've logged spending.")
@@ -252,6 +256,20 @@ def tracker_toggle(request, pk):
     tracker.save(update_fields=["is_active"])
     return _saved(f"{tracker.name} is active again." if tracker.is_active
                   else f"{tracker.name} is hidden. Its history is kept.")
+
+
+@require_POST
+def habit_target(request, pk):
+    tracker = get_object_or_404(Tracker, pk=pk, kind=Tracker.Kind.HABIT)
+    try:
+        target = int(request.POST.get("target", ""))
+    except ValueError:
+        target = 0
+    if not 1 <= target <= 7:
+        return _error("Pick how many days a week, from 1 to 7.")
+    tracker.weekly_target = None if target == 7 else target
+    tracker.save(update_fields=["weekly_target"])
+    return _saved(f"{tracker.name}: {'every day' if target == 7 else f'{target} a week'}.")
 
 
 @require_POST

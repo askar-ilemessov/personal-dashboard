@@ -5,10 +5,12 @@
 <header class="page-head">
   <div>
     <h1>{{ metric.name }}</h1>
-    <p class="sub">{{ range.start|date:"M j, Y" }} – {{ range.end|date:"M j, Y" }} {% if has_previous %} · compared with the {{ range.days }} days before{% endif %}</p>
+    <p class="sub">{{ range.label }}{% if has_previous %} · compared with {% if range.key == "week" %}the same days the week before{% else %}the {{ range.days }} days before{% endif %}{% endif %}</p>
   </div>
   {% include "web/partials/range.html" %}
 </header>
+
+{% if spend %}{% include "web/partials/spend_quick.html" %}{% endif %}
 
 <section class="stats">
   {% for s in stats %}

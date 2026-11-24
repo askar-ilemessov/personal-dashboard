@@ -48,6 +48,9 @@ class AppSettings(OwnedModel):
     weekly_review_enabled = models.BooleanField(default=True, help_text="Send the weekly review on Telegram")
     weekly_review_time = models.TimeField(default=time(18, 0), help_text="Sunday, local time")
     last_reminder_day = models.DateField(null=True, blank=True, editable=False)
+    default_range = models.CharField(
+        max_length=8, default="week", help_text="Range Trends and the detail pages open on: week, 30d, 90d or 1y"
+    )
     # Onboarding (web/setup_views.py). Blank once finished; accounts not
     # created by an invite never go through it.
     setup_step = models.CharField(max_length=16, blank=True)
@@ -123,6 +126,9 @@ class Tracker(OwnedModel):
     aliases = models.JSONField(default=list, blank=True, help_text="Extra names the parser accepts")
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0)
+    weekly_target = models.PositiveSmallIntegerField(
+        null=True, blank=True, help_text="Habits: days a week to aim for (7 = every day). Blank means every day."
+    )
 
     class Meta:
         ordering = ["sort_order", "name"]
@@ -334,6 +340,17 @@ class DayNote(LoggedRow):
 
     def __str__(self):
         return f"{self.day} note"
+
+
+class NoSpendDay(LoggedRow):
+    """"Nothing spent" for a day, so a day with no expenses can be told apart
+    from a day nobody logged. Ignored once that day has an expense."""
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "day"], name="one_no_spend_per_day")]
+
+    def __str__(self):
+        return f"{self.day} nothing spent"
 
 
 class Tag(OwnedModel):

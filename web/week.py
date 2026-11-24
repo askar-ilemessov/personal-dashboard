@@ -66,9 +66,12 @@ def day_card(d: date, today: date, s: AppSettings, trackers: list[Tracker]) -> d
     for w in Workout.objects.filter(day=d):
         items.append({"area": "sleep", "label": w.get_type_display(),
                       "value": fmt.minutes(w.duration_min) if w.duration_min else "✓"})
-    spent = Expense.objects.filter(day=d).exists()
-    if spent:
+    if Expense.objects.filter(day=d).exists():
         items.append({"area": "money", "label": "Spent", "value": fmt.money(metrics.value("expenses.total", d))})
+    elif metrics.spending_unlogged(d):
+        missing.append("Spending")
+    elif ExpenseCategory.objects.filter(is_active=True).exists():
+        items.append({"area": "money", "label": "Spent", "value": fmt.money(0)})
     return {"day": d, "today": d == today, "future": d > today, "items": items,
             "missing": [] if d > today else missing,
             "url": reverse("web:day", args=[d.isoformat()])}

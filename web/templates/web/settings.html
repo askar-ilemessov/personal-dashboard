@@ -19,6 +19,8 @@
     <label>Main currency <select name="currency">{% for c in currencies %}<option{% if c == settings.default_currency %} selected{% endif %}>{{ c }}</option>{% endfor %}</select>
       <span class="hint">Can't be changed once you log spending.</span></label>
     {% endif %}
+    <label>Charts open on <select name="default_range">{% for key, label, n in ranges %}<option value="{{ key }}"{% if key == settings.default_range %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <span class="hint">Trends and the Sleep, Exercise, Spending and tracker pages.</span></label>
     <label class="check"><input type="checkbox" name="reminder_enabled"{% if settings.reminder_enabled %} checked{% endif %}> Evening reminder on Telegram at
       <input type="time" name="reminder_time" value="{{ settings.reminder_time|time:'H:i' }}" required aria-label="Reminder time"></label>
     <label class="check"><input type="checkbox" name="weekly_review_enabled"{% if settings.weekly_review_enabled %} checked{% endif %}> Weekly review on Telegram, Sunday at

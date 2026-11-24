@@ -2,22 +2,51 @@
 {% block title %}Habits{% endblock %}
 {% block content %}
 <header class="page-head">
-  <div><h1>Habits</h1><p class="sub">Last 26 weeks · {{ today|date:"l, F j" }}</p></div>
-  <p class="legend"><span class="swatch heat-done"></span> done <span class="swatch heat-miss"></span> not done <span class="swatch heat-none"></span> not logged</p>
+  <div><p class="sub sub-above">Week {{ today.isocalendar.week }} · {{ today|date:"l, F j" }}</p><h1>Habits</h1></div>
+  {% if cards %}<p class="habits-count{% if done_today == cards|length %} all{% endif %}">{{ done_today }} of {{ cards|length }} today</p>{% endif %}
 </header>
-{% for c in habits %}
-<section class="panel habit">
-  <div class="habit-head">
-    {% include "web/partials/control.html" with c=c %}
-    <dl class="habit-stats">
-      <div><dt>Current streak</dt><dd>{{ c.streak }} day{{ c.streak|pluralize }}</dd></div>
-      <div><dt>Longest</dt><dd>{{ c.longest }} day{{ c.longest|pluralize }}</dd></div>
-      <div><dt>Last 30 days</dt><dd>{{ c.done_30 }} done <span class="muted">of {{ c.logged_30 }} logged</span></dd></div>
-    </dl>
-  </div>
-  <div class="heat-scroll">{{ c.heatmap }}</div>
-</section>
+
+<section class="habit-grid">
+{% for c in cards %}
+  <article class="hcard{% if c.done %} done{% endif %}">
+    <div class="hcard-top">
+      <form hx-post="{% url 'web:log' %}" hx-swap="none" class="hcard-form">
+        <input type="hidden" name="kind" value="tracker"><input type="hidden" name="tracker" value="{{ c.tracker.slug }}">
+        <button class="hcard-go" name="value" value="{% if c.done %}0{% else %}1{% endif %}" aria-pressed="{% if c.done %}true{% else %}false{% endif %}">
+          {% if c.done %}{{ c.tracker.name }} · done{% elif c.skipped %}{{ c.tracker.name }} · skipped today{% else %}{{ c.tracker.name }}{% endif %}
+        </button>
+      </form>
+      <a class="hcard-streak" href="{{ c.url }}" title="Longest: {{ c.longest }} day{{ c.longest|pluralize }}">
+        <b>{{ c.streak }}</b><span>day streak</span>
+      </a>
+    </div>
+    <div class="hcard-week">
+      {% for w in c.week %}
+      {% if w.state == "future" %}<span class="hday future" aria-hidden="true">{{ w.letter }}</span>
+      {% else %}
+      <form hx-post="{% url 'web:log' %}" hx-swap="none">
+        <input type="hidden" name="kind" value="tracker"><input type="hidden" name="tracker" value="{{ c.tracker.slug }}"><input type="hidden" name="day" value="{{ w.param }}">
+        <button class="hday {{ w.state }}{% if w.today %} today{% endif %}" name="value" value="{{ w.next }}"
+                aria-label="{{ c.tracker.name }}, {{ w.day|date:'l' }}: {% if w.state == 'done' %}done (tap for not done){% elif w.state == 'skip' %}not done (tap for done){% else %}not logged (tap for done){% endif %}">{% if w.state == "done" %}✓{% elif w.state == "skip" %}–{% else %}{{ w.letter }}{% endif %}</button>
+      </form>
+      {% endif %}
+      {% endfor %}
+    </div>
+    <div class="hcard-goal">
+      <div class="bar"><span style="width: {% widthratio c.done_week c.target 100 %}%"></span></div>
+      <span>{% if c.met %}Target met · {{ c.done_week }} of {{ c.target }}{% else %}{{ c.done_week }} of {{ c.target }} · {{ c.left }} to go{% endif %}</span>
+      <form hx-post="{% url 'web:habit_target' c.tracker.pk %}" hx-swap="none" hx-trigger="change" class="hcard-target">
+        <label class="visually-hidden" for="target-{{ c.tracker.pk }}">Target for {{ c.tracker.name }}</label>
+        <select id="target-{{ c.tracker.pk }}" name="target">{% for n, label in targets %}<option value="{{ n }}"{% if n == c.target %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      </form>
+    </div>
+    <details class="hcard-year">
+      <summary>Last 26 weeks · best streak {{ c.longest }}</summary>
+      <div class="heat-scroll">{{ c.heatmap }}</div>
+    </details>
+  </article>
 {% empty %}
-<section class="panel"><p class="muted">No habits yet. Add one under Settings → Trackers.</p></section>
+  <section class="panel"><p class="muted">No habits yet. Add one under Settings → Trackers.</p></section>
 {% endfor %}
+</section>
 {% endblock %}

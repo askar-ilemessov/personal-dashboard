@@ -576,3 +576,96 @@ def test_day_view_lists_missing_and_logged(client):
 def test_day_jump(client):
     assert client.get("/day/?date=2026-01-05").url == "/day/2026-01-05/"
     assert client.get("/day/?date=nope").url == "/"
+
+
+# --- phase 4: week ranges, habit cards, spending ------------------------------------
+
+
+def test_charts_open_on_the_week_by_default(client):
+    from tracking.models import AppSettings
+
+    today = days.today()
+    monday = today - timedelta(days=today.weekday())
+    html = client.get("/trends/").content.decode()
+    assert f"Week {today.isocalendar().week} · {monday:%b} {monday.day}" in html and "so far" in html
+    assert 'aria-label="Previous week"' in html
+    last = client.get(f"/trends/?range=week&week={(monday - timedelta(days=1)).isoformat()}").content.decode()
+    assert f"Week {(monday - timedelta(days=7)).isocalendar().week}" in last and "so far" not in last
+    assert "30 days" in client.get("/trends/?range=7d").content.decode()  # old links still work
+
+    assert events(client.post("/settings/general/", {"timezone": "America/Toronto", "day_start": "04:00",
+                                                     "reminder_time": "21:00", "weekly_review_time": "18:00",
+                                                     "default_range": "30d"}))["toast"]
+    assert AppSettings.load().default_range == "30d"
+    assert "Week " not in client.get("/sleep/").content.decode().split("<h1>")[1].split("</header>")[0]
+    assert events(client.post("/settings/general/", {"timezone": "America/Toronto", "day_start": "04:00",
+                                                     "reminder_time": "21:00", "weekly_review_time": "18:00",
+                                                     "default_range": "forever"}))["toast"]["error"]
+
+
+def test_week_range_compares_the_same_days_of_the_week_before(client):
+    today = days.today()
+    monday = today - timedelta(days=today.weekday())
+    for d in (monday - timedelta(days=7), monday):
+        client.post("/log/", {"kind": "tracker", "tracker": "coffee", "value": "2", "day": d.isoformat()})
+    client.post("/log/", {"kind": "tracker", "tracker": "coffee", "value": "4", "day": (monday - timedelta(days=1)).isoformat()})
+    html = client.get("/t/coffee/?range=week").content.decode()
+    assert "the same days the week before" in html
+
+
+def test_habit_cards(client):
+    from tracking.models import Tracker
+
+    today = days.today()
+    html = client.get("/habits/").content.decode()
+    assert "0 of 4 today" in html and "Read 20 min" in html and "Every day" in html
+    client.post("/log/", {"kind": "tracker", "tracker": "read", "value": "1"})
+    html = client.get("/habits/").content.decode()
+    assert "Read 20 min · done" in html and "1 of 4 today" in html
+    read = Tracker.objects.get(slug="read")
+    assert "Target met" not in html
+    assert events(client.post(f"/settings/trackers/{read.pk}/target/", {"target": "1"}))["toast"]["message"] == "Read 20 min: 1 a week."
+    read.refresh_from_db()
+    assert read.weekly_target == 1 and "Target met · 1 of 1" in client.get("/habits/").content.decode()
+    client.post(f"/settings/trackers/{read.pk}/target/", {"target": "7"})
+    read.refresh_from_db()
+    assert read.weekly_target is None
+    assert events(client.post(f"/settings/trackers/{read.pk}/target/", {"target": "9"}))["toast"]["error"]
+    coffee = Tracker.objects.get(slug="coffee")
+    assert client.post(f"/settings/trackers/{coffee.pk}/target/", {"target": "3"}).status_code == 404
+    if today.weekday():  # a past day this week can be fixed from its dot
+        assert f'name="day" value="{(today - timedelta(days=1)).isoformat()}"' in client.get("/habits/").content.decode()
+
+
+def test_nothing_spent(client):
+    from tracking.models import NoSpendDay
+
+    today = days.today()
+    yesterday = today - timedelta(days=1)
+    assert metrics.spending_unlogged(today)
+    assert "expenses.total" in metrics.unlogged(today)
+    html = client.get("/expenses/").content.decode()
+    assert "Add spending" in html and "to check" in html
+    ev = events(client.post("/log/", {"kind": "nospend"}))
+    assert ev["toast"]["message"] == "Nothing spent" and not metrics.spending_unlogged(today)
+    client.post(f"/undo/{ev['toast']['op']}/")
+    assert metrics.spending_unlogged(today)
+
+    client.post("/log/", {"kind": "expense", "amount": "4", "category": "food", "day": yesterday.isoformat()})
+    assert events(client.post("/log/", {"kind": "nospend", "day": yesterday.isoformat()}))["toast"]["error"]
+    assert not NoSpendDay.objects.exists()
+    assert metrics.value("expenses.total", today) == 0  # still a real zero in charts
+
+    left = client.get("/").content.decode().split('id="left-title"')[1].split('id="today-title"')[0]
+    assert ">Spending<" not in left  # yesterday has spending
+    assert ">Spending<" in client.get("/").content.decode().split('id="today-title"')[1]
+
+
+def test_repeat_recent_purchases(client):
+    for _ in range(2):
+        client.post("/log/", {"kind": "expense", "amount": "4.50", "category": "eating-out"})
+    client.post("/log/", {"kind": "expense", "amount": "82", "category": "food"})
+    html = client.get("/expenses/").content.decode()
+    presets = html.split("Again?")[1].split("</section>")[0]
+    assert presets.index("Eating out $4.50") < presets.index("Groceries $82.00")  # most repeated first
+    assert 'name="amount" value="4.5"' in presets

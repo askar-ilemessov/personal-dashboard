@@ -26,6 +26,7 @@ from .models import (
     Entry,
     Expense,
     ExpenseCategory,
+    NoSpendDay,
     SleepSession,
     Tracker,
     Workout,
@@ -102,7 +103,8 @@ def value(metric: str, day: date) -> Decimal | None:
 
 
 def unlogged(day: date) -> list[str]:
-    """Metric keys with nothing logged for `day`: active trackers and sleep."""
+    """Metric keys with nothing logged for `day`: active trackers, sleep, and
+    spending (no expense and no "nothing spent")."""
     logged = set(Entry.objects.filter(day=day).values_list("tracker__slug", flat=True))
     missing = [
         f"tracker:{slug}"
@@ -111,13 +113,26 @@ def unlogged(day: date) -> list[str]:
     ]
     if not SleepSession.objects.filter(day=day, wake_time__isnull=False).exists():
         missing.append("sleep.duration")
+    if spending_unlogged(day):
+        missing.append("expenses.total")
     return missing
 
 
+def spending_unlogged(day: date) -> bool:
+    """No expense and no "nothing spent" for `day` (and spending is in use).
+    Spending is an event log, so this is only a nudge, never a gap in charts."""
+    if not ExpenseCategory.objects.filter(is_active=True).exists():
+        return False
+    return not Expense.objects.filter(day=day).exists() and not NoSpendDay.objects.filter(day=day).exists()
+
+
 def loggable() -> list[str]:
-    """What `unlogged` checks: every active tracker, and sleep."""
+    """What `unlogged` checks: every active tracker, sleep, and spending."""
     keys = [f"tracker:{slug}" for slug in Tracker.objects.filter(is_active=True).values_list("slug", flat=True)]
-    return [*keys, "sleep.duration"]
+    keys.append("sleep.duration")
+    if ExpenseCategory.objects.filter(is_active=True).exists():
+        keys.append("expenses.total")
+    return keys
 
 
 def logged_share(day: date) -> float:
