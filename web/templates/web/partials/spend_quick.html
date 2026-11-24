@@ -1,0 +1,57 @@
+{# Top of the Spending page (views._spend_panel). #}
+<div class="spend-top">
+  <section class="loglist spend-add" aria-labelledby="spend-add-title">
+    <header><h2 id="spend-add-title">Add spending</h2></header>
+    <form hx-post="{% url 'web:log' %}" hx-swap="none" hx-on::after-request="if (event.detail.successful) { this.reset(); }">
+      <input type="hidden" name="kind" value="expense">
+      <div class="spend-row">
+        <label class="visually-hidden" for="spend-amount">Amount</label>
+        <input class="spend-amount" id="spend-amount" name="amount" inputmode="decimal" placeholder="0.00" autocomplete="off" required>
+        <div class="seg-radio" role="radiogroup" aria-label="Day">
+          <label><input type="radio" name="day" value="" checked><span>Today</span></label>
+          <label><input type="radio" name="day" value="{{ spend.yesterday.isoformat }}"><span>Yesterday</span></label>
+        </div>
+      </div>
+      <fieldset class="chip-radio">
+        <legend class="visually-hidden">Category</legend>
+        {% for c in categories %}<label><input type="radio" name="category" value="{{ c.slug }}"{% if forloop.first %} checked{% endif %}><span>{{ c.name }}</span></label>{% endfor %}
+      </fieldset>
+      <div class="spend-row">
+        <label class="visually-hidden" for="spend-note">Note</label>
+        <input id="spend-note" name="note" placeholder="Note (optional)" autocomplete="off">
+        <button class="btn primary">Add</button>
+      </div>
+    </form>
+    {% if spend.presets %}
+    <div class="presets">
+      <span class="presets-label">Again?</span>
+      {% for p in spend.presets %}
+      <form hx-post="{% url 'web:log' %}" hx-swap="none">
+        <input type="hidden" name="kind" value="expense"><input type="hidden" name="category" value="{{ p.slug }}">
+        <input type="hidden" name="amount" value="{{ p.amount }}"><input type="hidden" name="currency" value="{{ p.currency }}">
+        <button class="chip">{{ p.label }}</button>
+      </form>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="loglist spend-week" aria-labelledby="spend-week-title">
+    <header><h2 id="spend-week-title">This week</h2>{% if spend.asks %}<span class="count-pill">{{ spend.asks }} to check</span>{% endif %}</header>
+    <div class="spend-days">
+      {% for w in spend.week %}
+      {% if w.state == "ask" %}
+      <form hx-post="{% url 'web:log' %}" hx-swap="none">
+        <input type="hidden" name="kind" value="nospend"><input type="hidden" name="day" value="{{ w.param }}">
+        <button class="sday ask" aria-label="{{ w.day|date:'l' }}: nothing logged. Tap if nothing was spent.">
+          <span class="sday-d">{{ w.day|date:"D" }} {{ w.day.day }}</span><b>?</b><small>Nothing spent</small>
+        </button>
+      </form>
+      {% else %}
+      <div class="sday {{ w.state }}"><span class="sday-d">{{ w.day|date:"D" }} {{ w.day.day }}</span><b>{% if w.state == "future" %}&nbsp;{% else %}{{ w.total }}{% endif %}</b>{% if w.state == "none" %}<small>nothing spent</small>{% endif %}</div>
+      {% endif %}
+      {% endfor %}
+    </div>
+    <p class="hint">A <b>?</b> day has nothing logged. Add what you spent, or tap it if you really spent nothing.</p>
+  </section>
+</div>

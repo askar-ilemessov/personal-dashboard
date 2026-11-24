@@ -21,13 +21,22 @@ from parsing.describe import describe
 from parsing.grammar import parse, parse_duration
 from parsing.models import Draft
 from tracking import days, fmt, logbook, metrics
-from tracking.logbook import DayNoteLog, DayTagLog, ExpenseLog, LogError, TrackerLog, WorkoutLog
+from tracking.logbook import (
+    DayNoteLog,
+    DayTagLog,
+    ExpenseLog,
+    LogError,
+    NoSpendLog,
+    TrackerLog,
+    WorkoutLog,
+)
 from tracking.models import (
     AppSettings,
     DayTag,
-    Entry,
+    Expense,
     ExpenseCategory,
     Goal,
+    NoSpendDay,
     Operation,
     SleepSession,
     Tracker,
@@ -38,7 +47,8 @@ from . import charts
 from .tables import TABLES
 
 PAGE_SIZE = 50
-RANGES = [("7d", "7 days", 7), ("30d", "30 days", 30), ("90d", "90 days", 90), ("1y", "1 year", 365)]
+RANGES = [("week", "Week", 7), ("30d", "30 days", 30), ("90d", "90 days", 90), ("1y", "1 year", 365)]
+RANGE_KEYS = {k for k, _, _ in RANGES}
 NAV = [
     ("today", "Today", "web:today"), ("trends", "Trends", "web:trends"), ("habits", "Habits", "web:habits"),
     ("expenses", "Expenses", "web:expenses"), ("sleep", "Sleep", "web:sleep"),
@@ -85,31 +95,60 @@ def _metric_url(metric) -> str:
 
 
 def _range(request, today: date) -> dict:
-    """Selected range plus the equally long period before it."""
-    key = request.GET.get("range", "30d")
+    """Selected range plus the period before it to compare with. "week" is a
+    calendar week, Monday to Sunday (up to today), compared with the same
+    days of the week before; the others are the last N days. With no choice
+    in the URL, the account's default range applies (Settings)."""
+    key = request.GET.get("range") or AppSettings.load().default_range
+    if key == "7d":  # older links
+        key = "week"
     start = end = None
     if key == "custom":
         try:
             start, end = date.fromisoformat(request.GET["start"]), date.fromisoformat(request.GET["end"])
         except (KeyError, ValueError):
-            key = "30d"
+            key = "week"
         else:
             if start > end:
                 start, end = end, start
             end = min(end, today)
             start = min(start, end)
-    if key != "custom":
+    if key == "week":
+        try:
+            anchor = min(date.fromisoformat(request.GET.get("week", "")), today)
+        except ValueError:
+            anchor = today
+        start = anchor - timedelta(days=anchor.weekday())
+        end = min(start + timedelta(days=6), today)
+    elif key != "custom":
         length = next((n for k, _, n in RANGES if k == key), None)
         if length is None:
             key, length = "30d", 30
         end, start = today, today - timedelta(days=length - 1)
     n = (end - start).days + 1
-    params = {"range": key} | ({"start": start.isoformat(), "end": end.isoformat()} if key == "custom" else {})
-    return {
+    params = {"range": key}
+    if key == "custom":
+        params |= {"start": start.isoformat(), "end": end.isoformat()}
+    elif key == "week" and start != today - timedelta(days=today.weekday()):
+        params["week"] = start.isoformat()
+    rng = {
         "key": key, "start": start, "end": end, "days": n, "options": RANGES, "params": params,
         "prev_start": start - timedelta(days=n), "prev_end": start - timedelta(days=1),
         "query": urlencode(params),
+        "label": f"{start:%b} {start.day} – {end:%b} {end.day}, {end.year}",
     }
+    if key == "week":
+        sunday = start + timedelta(days=6)
+        this_week = start == today - timedelta(days=today.weekday())
+        rng |= {
+            "prev_start": start - timedelta(days=7), "prev_end": end - timedelta(days=7),
+            "week_number": start.isocalendar().week,
+            "label": f"Week {start.isocalendar().week} · {start:%b} {start.day} – {sunday:%b} {sunday.day}"
+                     + (" · so far" if this_week else ""),
+            "prev_week": (start - timedelta(days=7)).isoformat(),
+            "next_week": None if this_week else (start + timedelta(days=7)).isoformat(),
+        }
+    return rng
 
 
 def _control(tracker: Tracker, value, day: date, today: date) -> dict:
@@ -246,13 +285,38 @@ def expenses(request):
             for slug, amount in sorted(by_category.items(), key=lambda kv: -kv[1])
         ]
         return {"breakdown": breakdown, "budgets": metrics.budgets(days.today(s)),
-                "categories": ExpenseCategory.objects.filter(is_active=True)}
+                "categories": ExpenseCategory.objects.filter(is_active=True), "spend": _spend_panel(s)}
 
     categories = [(c.slug, c.name) for c in ExpenseCategory.objects.all()]
     filters = [{"name": "category", "label": "All categories", "choices": categories,
                 "value": request.GET.get("category", "")}]
     return _detail(request, metrics.get("expenses.total"), "expense", TABLES["expense"].queryset(),
                    "expenses", extra, filters)
+
+
+def _spend_panel(s) -> dict:
+    """Top of the Spending page: quick add, recent purchases to repeat, and
+    this week's days, with the unlogged ones asking whether nothing was spent."""
+    from collections import Counter
+
+    today = days.today(s)
+    recent = (Expense.objects.filter(day__gte=today - timedelta(days=60), recurring__isnull=True)
+              .select_related("category").order_by("-occurred_at"))
+    counts = Counter((e.category.slug, e.category.name, e.amount, e.currency) for e in recent[:200])
+    presets = [{"slug": slug, "name": name, "amount": f"{amount.normalize():f}", "currency": currency,
+                "label": f"{name} {fmt.money(amount, currency)}"}
+               for (slug, name, amount, currency), _ in counts.most_common(4)]
+    monday = today - timedelta(days=today.weekday())
+    week = []
+    for i in range(7):
+        d = monday + timedelta(days=i)
+        spent = Expense.objects.filter(day=d).exists()
+        state = "future" if d > today else "spent" if spent else "none" if NoSpendDay.objects.filter(day=d).exists() \
+            else "ask"
+        week.append({"day": d, "state": state, "param": "" if d == today else d.isoformat(),
+                     "total": fmt.money(metrics.value("expenses.total", d)) if spent else fmt.money(0)})
+    return {"presets": presets, "week": week, "today": today, "yesterday": today - timedelta(days=1),
+            "asks": sum(1 for w in week if w["state"] == "ask")}
 
 
 def _mean_clock(moments, s, anchor_hour) -> str | None:
@@ -301,23 +365,41 @@ def exercise(request):
 
 
 def habits(request):
+    """One card per habit: a big tick for today, the streak, this week's seven
+    days (tap one to fix it) against the weekly target, and the last 26 weeks."""
     s = AppSettings.load()
     now = days.today(s)
     weeks = 26
     start = now - timedelta(days=now.weekday() + 7 * (weeks - 1))
-    month_ago = now - timedelta(days=29)
-    logged_today = dict(Entry.objects.filter(day=now, tracker__kind="habit").values_list("tracker__slug", "value"))
-    rows = []
+    monday = now - timedelta(days=now.weekday())
+    cards = []
     for t in Tracker.objects.filter(is_active=True, kind=Tracker.Kind.HABIT):
         series = metrics.tracker_series(t, start, now)
         current, longest = metrics.habit_streaks(t, now)
-        recent = [v for d, v in series.items() if d >= month_ago]
-        rows.append(_control(t, logged_today.get(t.slug), now, now) | {
-            "heatmap": charts.heatmap(series, now, weeks), "streak": current, "longest": longest,
-            "done_30": sum(1 for v in recent if v is not None and v >= 1),
-            "logged_30": sum(1 for v in recent if v is not None),
+        week = []
+        for i in range(7):
+            d = monday + timedelta(days=i)
+            v = series.get(d) if d <= now else None
+            state = "future" if d > now else "done" if v is not None and v >= 1 else "skip" if v is not None else "open"
+            week.append({"day": d, "letter": "MTWTFSS"[i], "state": state, "today": d == now,
+                         "param": "" if d == now else d.isoformat(), "next": 0 if state == "done" else 1})
+        done_week = sum(1 for w in week if w["state"] == "done")
+        target = t.weekly_target or 7
+        today_value = series.get(now)
+        cards.append({
+            "tracker": t, "done": today_value is not None and today_value >= 1,
+            "skipped": today_value is not None and today_value < 1,
+            "streak": current, "longest": longest, "week": week, "done_week": done_week, "target": target,
+            "met": done_week >= target, "left": max(target - done_week, 0),
+            "heatmap": charts.heatmap(series, now, weeks), "url": reverse("web:tracker", args=[t.slug]),
         })
-    return render(request, "web/habits.html", {"nav": "habits", "habits": rows, "today": now})
+    done_today = sum(1 for c in cards if c["done"])
+    return render(request, "web/habits.html", {"nav": "habits", "cards": cards, "today": now,
+                                                "done_today": done_today, "targets": TARGETS})
+
+
+TARGETS = [(7, "Every day"), (6, "6 a week"), (5, "5 a week"), (4, "4 a week"), (3, "3 a week"),
+           (2, "2 a week"), (1, "Once a week")]
 
 
 def trends(request):
@@ -443,6 +525,8 @@ def log(request):
             if not parsed.ok:
                 raise LogError(parsed.errors[0] if parsed.errors else "Couldn't read those times.")
             intents = parsed.intents
+        elif kind == "nospend":
+            intents = [NoSpendLog(**when)]
         elif kind == "note":
             intents = [DayNoteLog(note=p.get("note", ""), append=False, **when)]
         elif kind == "tags":

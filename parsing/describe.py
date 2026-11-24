@@ -1,7 +1,15 @@
 """Plain-language description of intents, for previews, toasts and bot replies."""
 
 from tracking import days, fmt, logbook
-from tracking.logbook import DayNoteLog, DayTagLog, ExpenseLog, SleepLog, TrackerLog, WorkoutLog
+from tracking.logbook import (
+    DayNoteLog,
+    DayTagLog,
+    ExpenseLog,
+    NoSpendLog,
+    SleepLog,
+    TrackerLog,
+    WorkoutLog,
+)
 from tracking.models import AppSettings, Tracker
 
 
@@ -51,6 +59,8 @@ def _describe(intent, s: AppSettings) -> str:
         return "Workout: " + " · ".join(parts)
     if isinstance(intent, DayNoteLog):
         return f"Note: {intent.note}"
+    if isinstance(intent, NoSpendLog):
+        return "Nothing spent"
     if isinstance(intent, DayTagLog):
         return "Tags: " + " ".join(f"#{t}" for t in intent.tags)
     return str(intent)

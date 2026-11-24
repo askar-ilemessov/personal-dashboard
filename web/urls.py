@@ -30,6 +30,7 @@ urlpatterns = [
     path("settings/budgets/", settings_views.budgets, name="settings_budgets"),
     path("settings/trackers/", settings_views.tracker_add, name="tracker_add"),
     path("settings/trackers/<int:pk>/toggle/", settings_views.tracker_toggle, name="tracker_toggle"),
+    path("settings/trackers/<int:pk>/target/", settings_views.habit_target, name="habit_target"),
     path("settings/tokens/", settings_views.token_add, name="token_add"),
     path("settings/tokens/<int:pk>/revoke/", settings_views.token_revoke, name="token_revoke"),
     path("settings/telegram/", settings_views.telegram_status, name="telegram_status"),

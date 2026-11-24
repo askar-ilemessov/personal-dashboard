@@ -3,7 +3,11 @@
   <a class="logrow-name" href="{{ r.url }}">{{ r.name }}</a>
   <form class="logrow-ctl" hx-post="{% url 'web:log' %}" hx-swap="none">
     <input type="hidden" name="day" value="{{ r.day }}">
-    {% if r.kind == "sleep" %}
+    {% if r.kind == "spend" %}
+      <input type="hidden" name="kind" value="nospend">
+      {% if r.logged %}<span class="logrow-value">{{ r.display }}</span>{% else %}<button class="pill-btn quiet">Nothing spent</button>{% endif %}
+      <a class="pill-btn" href="{{ r.add_url }}">+ Add</a>
+    {% elif r.kind == "sleep" %}
       <input type="hidden" name="kind" value="sleep">
       {% if r.logged %}
         <span class="logrow-value">{{ r.display }}</span><span class="logrow-sub">{{ r.times }}</span>

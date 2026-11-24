@@ -1,12 +1,22 @@
 <div class="range" hx-swap="innerHTML show:none">
+  {% if range.key == "week" %}
+  <div class="weeknav" role="group" aria-label="Week">
+    <a class="btn round" href="?range=week&amp;week={{ range.prev_week }}" aria-label="Previous week">‹</a>
+    {% if range.next_week %}<a class="btn round" href="?range=week&amp;week={{ range.next_week }}" aria-label="Next week">›</a>
+    {% else %}<span class="btn round ghost" aria-hidden="true">›</span>{% endif %}
+  </div>
+  {% endif %}
   <div class="segmented" role="group" aria-label="Date range">
     {% for key, label, n in range.options %}<a href="?range={{ key }}"{% if range.key == key %} class="on" aria-current="true"{% endif %}>{{ label }}</a>{% endfor %}
   </div>
-  <form method="get" class="custom-range">
-    <input type="hidden" name="range" value="custom">
-    <input type="date" name="start" value="{{ range.start.isoformat }}" aria-label="From" required>
-    <span class="muted">to</span>
-    <input type="date" name="end" value="{{ range.end.isoformat }}" aria-label="To" required>
-    <button class="btn{% if range.key == 'custom' %} on{% endif %}">Apply</button>
-  </form>
+  <details class="custom-range-box"{% if range.key == "custom" %} open{% endif %}>
+    <summary class="btn quiet">Dates…</summary>
+    <form method="get" class="custom-range">
+      <input type="hidden" name="range" value="custom">
+      <input type="date" name="start" value="{{ range.start.isoformat }}" aria-label="From" required>
+      <span class="muted">to</span>
+      <input type="date" name="end" value="{{ range.end.isoformat }}" aria-label="To" required>
+      <button class="btn{% if range.key == 'custom' %} on{% endif %}">Apply</button>
+    </form>
+  </details>
 </div>

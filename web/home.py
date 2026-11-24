@@ -133,7 +133,19 @@ def log_rows(d: date, today: date, s: AppSettings) -> list[dict]:
         elif t.kind == Tracker.Kind.SCALE:
             row["scale"] = list(range(int(t.min_value or 1), int(t.max_value or 5) + 1))
         rows.append(row)
+    if ExpenseCategory.objects.filter(is_active=True).exists():
+        rows.append(_spend_row(d, day_param))
     return rows
+
+
+def _spend_row(d: date, day_param: str) -> dict:
+    """Spending is an event log; the row is "logged" once the day has an
+    expense or a "nothing spent" (so forgotten days get asked about)."""
+    unlogged = metrics.spending_unlogged(d)
+    total = metrics.value("expenses.total", d) or 0
+    return {"kind": "spend", "name": "Spending", "slug": "spend", "day": day_param, "logged": not unlogged,
+            "display": fmt.money(total) if total else "Nothing spent", "value": total,
+            "url": reverse("web:expenses"), "add_url": reverse("web:expenses") + "#spend-add-title"}
 
 
 def _sleep_row(d: date, today: date, s: AppSettings, day_param: str) -> dict:

@@ -28,6 +28,7 @@ from .models import (
     ExchangeRate,
     Expense,
     ExpenseCategory,
+    NoSpendDay,
     Operation,
     RecurringExpense,
     SleepSession,
@@ -95,6 +96,11 @@ class DayNoteLog(Intent):
 @dataclass(frozen=True, kw_only=True)
 class DayTagLog(Intent):
     tags: tuple[str, ...] | list[str]
+
+
+@dataclass(frozen=True, kw_only=True)
+class NoSpendLog(Intent):
+    """Nothing was spent that day."""
 
 
 # --- Lookup ----------------------------------------------------------------
@@ -337,6 +343,14 @@ def _apply_tags(intent: DayTagLog, ctx: _Ctx):
             ctx.create(DayTag, day=day, tag=tag)
 
 
+def _apply_no_spend(intent: NoSpendLog, ctx: _Ctx):
+    _, day = ctx.when(intent)
+    if Expense.objects.filter(day=day).exists():
+        raise LogError("That day already has spending logged.")
+    if not NoSpendDay.objects.filter(day=day).exists():
+        ctx.create(NoSpendDay, day=day)
+
+
 _HANDLERS = {
     TrackerLog: _apply_tracker,
     ExpenseLog: _apply_expense,
@@ -344,6 +358,7 @@ _HANDLERS = {
     WorkoutLog: _apply_workout,
     DayNoteLog: _apply_note,
     DayTagLog: _apply_tags,
+    NoSpendLog: _apply_no_spend,
 }
 
 
