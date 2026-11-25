@@ -40,6 +40,8 @@ uv run ruff check .
 - `api/` — token-protected HTTP API for iOS Shortcuts (`POST /api/v1/log`, `POST /api/v1/undo`, `GET /api/v1/today`), built on DRF. `auth.py` holds the bearer-token check and rate limits.
 - `web/home.py` — Home (the Today page): week strip, area tiles, streak card, "Left from <yesterday>" and Today log lists (`partials/logrow.html`), tasks. `insights/highlights.py` picks the streak card's fact; `tracking/tasks.py` reads typed tasks ("call bank fri").
 - `web/week.py` — the Week page (`/week/`, `/week/<any date>/`: Monday–Sunday, summary tiles, seven day cards with "+ missing" links) and the Day view (`/day/<date>/`: ‹ › days, week strip, at-a-glance, "Fill in" with only what's missing, add forms, a timeline of everything logged with delete-and-undo, note and tags folded away). `AREA` maps metric kinds to Momentum colours.
+- `web/connections.py` and `web/feeds.py` — Connections (`/connections/`): weather from Open-Meteo (place picked by name, no key) and today's events from a private iCalendar link, both shown on Home; Apple Health sleep via an iOS Shortcut posting `slept HH:mm-HH:mm` to the API. `feeds` does all outside fetching: cached (weather 30 min, calendar 15 min), never fatal (a card is left out or says it couldn't reach the source).
+- `web/people.py` — People (`/people/`, superusers only): per account last active, things logged per day for 7 days, where from, Telegram, setup. Counts only, never values; uses `all_users` and only aggregates.
 - `web/settings_views.py` — the Settings screen (general, goals, budgets, trackers, Telegram, API tokens, account, people).
 - `web/invites.py` — invite links (Django's password-reset token on `/welcome/…`); `manage.py invite` prints one.
 - `web/setup_views.py` — onboarding for invited accounts: `Welcome` (set password), five steps on `/setup/<step>/` (about, track, spending, goals, logging), `SetupMiddleware`. Template `web/setup.html`.
@@ -51,7 +53,7 @@ uv run ruff check .
 1. **One write path.** Web, bot, Shortcuts, parser, seed and recurring rules build intents (`TrackerLog`, `ExpenseLog`, `SleepLog`, `WorkoutLog`, `DayNoteLog`, `DayTagLog`) and call `logbook.apply(intents, source=...)`. Edits use `logbook.edit`, deletes `logbook.remove`. Never call `Model.objects.create` on a logged row elsewhere.
 2. **Every write returns an `Operation`**, which `logbook.undo` reverses (it stores before-snapshots). Undo toasts and bot "Undo" buttons use it.
 3. **Not logged ≠ 0.** No row means not logged; an `Entry` with value 0 means "logged, none". `metrics.series` returns `None` for unlogged tracker and sleep days. Expenses and exercise are event logs, so an empty day is 0. Never coerce `None` to 0 in stats or charts.
-4. **Days.** Rows store a UTC timestamp and a logical `day` computed at write time (boundary 04:00, in `AppSettings`). Changing the boundary does not rewrite history. Sleep belongs to the wake day. Django `TIME_ZONE` is UTC; the user's zone is `AppSettings.timezone`.
+4. **Days.** Rows store a UTC timestamp and a logical `day` computed at write time (boundary 04:00, in `AppSettings`). Changing the boundary does not rewrite history. Sleep belongs to the wake day. A night with a break is several `SleepSession` rows ("slept 22:00-1:00, 1:30-6:40", or Going to bed / I'm up twice): `grammar.chain_sleep` dates typed stretches back from the last one, and `logbook._join_night` keeps stretches less than 2 hours apart on the last one's wake day. Duration is the sum; `sleep.bedtime` is the first bedtime and `sleep.wake` the last wake-up (`metrics.night(day)` lists the stretches). Django `TIME_ZONE` is UTC; the user's zone is `AppSettings.timezone`.
 5. **Trackers are data.** Habits, counters, durations and scales are `Tracker` rows; adding one needs no code. `sum` trackers add entries through the day; `last` trackers hold one row per day. Mood and energy are scale trackers.
 6. **Money.** `Decimal` only. `Expense.amount_base` is the amount in the account's main currency (`AppSettings.default_currency`, CAD by default) using the manual `ExchangeRate` at logging time; there is no FX API. Format amounts with `fmt.money`, which uses the acting user's currency, its symbol (`fmt.SYMBOLS`) and no cents for JPY and KZT; the charts get the same from `#money` in `base.html`. Never hard-code `$`.
 7. **LLM boundaries** (phases 4–5). The LLM parses text into intents and writes prose from computed facts. All numbers come from deterministic Python. Ask-my-data exposes fixed query functions only, no SQL.
@@ -122,6 +124,13 @@ uv run ruff check .
 - `TELEGRAM_BOT_TOKEN` is for the bot process only; the web app needs `TELEGRAM_BOT_USERNAME`, and hides Telegram without it.
 - Messages use HTML parse mode: escape anything that came from the user or the database.
 - Bot tests feed real `Update` objects through the dispatcher with a fake session (`bot/tests/test_bot.py`); no token or network.
+
+## Connections conventions
+
+- **User-supplied URLs are hostile.** A calendar link is fetched only over https, from a host whose every resolved address is public (`ipaddress.is_global`), re-checked on each redirect (`_CheckedRedirect`), with a 3 MB cap and a 5 s timeout. Add the same guard to anything new that fetches a URL a user typed.
+- The calendar link is a secret (anyone with it can read the calendar): stored on `AppSettings.calendar_url`, shown back only masked (`connections.masked`). `webcal://` is turned into `https://`.
+- Outside data never enters metrics or the logbook; it is display only. Tests never touch the network (`web/tests/test_connections.py` fakes `feeds.fetch` and DNS).
+- A stretch of sleep that overlaps one already logged (or an open "went to bed" from up to 2 hours before it) replaces it, so a Shortcut that runs twice never doubles a night.
 
 ## API conventions
 

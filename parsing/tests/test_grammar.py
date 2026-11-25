@@ -222,3 +222,32 @@ def test_parsed_intents_apply_cleanly():
 )
 def test_describe(text, expected):
     assert describe(one(text)) == expected
+
+
+# --- a night with a break ------------------------------------------------------------
+
+
+@pytest.mark.parametrize("text", ["slept 22:00-1:00, 1:30-6:40", "slept 10pm-1am and 1:30am-6:40am",
+                                  "slept 22-1; 1:30 - 6:40"])
+def test_a_night_with_a_break(text):
+    r = parse(text, now=NOW)
+    assert r.ok and r.intents == [
+        SleepLog(bedtime=local(2026, 11, 13, 22, 0), wake_time=local(2026, 11, 14, 1, 0), day=date(2026, 11, 14)),
+        SleepLog(bedtime=local(2026, 11, 14, 1, 30), wake_time=local(2026, 11, 14, 6, 40), day=date(2026, 11, 14)),
+    ]
+
+
+def test_a_stretch_ending_before_midnight_belongs_to_the_wake_day():
+    first, second = parse("slept 21:00-23:30, 0:30-6:40", now=NOW).intents
+    assert (first.bedtime, first.wake_time, first.day) == (local(2026, 11, 13, 21), local(2026, 11, 13, 23, 30),
+                                                           date(2026, 11, 14))
+    assert second.bedtime == local(2026, 11, 14, 0, 30) and second.day == date(2026, 11, 14)
+    backfill = parse("yesterday slept 22-1, 1:30-6", now=NOW).intents
+    assert [x.day for x in backfill] == [date(2026, 11, 13)] * 2
+    assert backfill[0].bedtime == local(2026, 11, 12, 22) and backfill[1].wake_time == local(2026, 11, 13, 6)
+
+
+def test_each_stretch_needs_both_times():
+    r = parse("slept 22-1, 1:30", now=NOW)
+    assert not r.ok and "both times" in r.errors[0]
+    assert not parse("1:30-6:40", now=NOW).ok  # a bare range only continues a sleep

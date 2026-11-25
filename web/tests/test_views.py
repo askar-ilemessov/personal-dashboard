@@ -669,3 +669,16 @@ def test_repeat_recent_purchases(client):
     presets = html.split("Again?")[1].split("</section>")[0]
     assert presets.index("Eating out $4.50") < presets.index("Groceries $82.00")  # most repeated first
     assert 'name="amount" value="4.5"' in presets
+
+
+def test_a_night_with_a_break_from_the_log_list(client):
+    from tracking.models import AppSettings
+    from web import home
+
+    s = AppSettings.load()
+    past = days.today(s) - timedelta(days=3)
+    ev = events(client.post("/log/", {"kind": "sleep", "range": "22:00-1:00, 1:30-6:40", "day": past.isoformat()}))
+    assert "refresh" in ev and "Slept 22:00 → 01:00" in ev["toast"]["message"]
+    assert metrics.value("sleep.duration", past) == 180 + 310
+    row = home.log_rows(past, days.today(s), s)[0]
+    assert row["times"] == "22:00 → 01:00, 01:30 → 06:40" and row["breaks"] == 1

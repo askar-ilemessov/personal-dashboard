@@ -538,3 +538,19 @@ def test_a_reminder_time_after_midnight_belongs_to_the_evening(db):
     assert not jobs.reminder_due(local(2026, 11, 14, 9, 0))  # morning: 00:30 tonight hasn't come yet
     assert not jobs.reminder_due(local(2026, 11, 14, 23, 59))
     assert jobs.reminder_due(local(2026, 11, 15, 0, 30))
+
+
+def test_sleep_screen_shows_a_night_with_a_break(db, owner):
+    from bot import screens
+    from tracking.logbook import SleepLog
+
+    today = days.today()
+    tz = AppSettings.load().tz
+
+    def at(d, h, m=0):
+        return datetime.combine(d, datetime.min.time(), tzinfo=tz).replace(hour=h, minute=m)
+
+    logbook.apply([SleepLog(bedtime=at(today - timedelta(days=1), 22), wake_time=at(today, 1), day=today),
+                   SleepLog(bedtime=at(today, 1, 30), wake_time=at(today, 6, 40), day=today)], source="telegram")
+    text, _ = screens.sleep()
+    assert "22:00 → 01:00, 01:30 → 06:40 · <b>8h 10m</b>" in text and "Woke once in the night" in text

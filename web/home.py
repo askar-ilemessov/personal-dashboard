@@ -17,6 +17,7 @@ from tracking import days, fmt, metrics
 from tracking import tasks as task_text
 from tracking.models import AppSettings, ExpenseCategory, Goal, SleepSession, Task, Tracker
 
+from . import feeds
 from .views import _error, _events, _first_steps
 
 WEEKDAY_LETTERS = "MTWTFSS"
@@ -35,6 +36,9 @@ def today(request):
         "tiles": tiles(day, s), "highlight": highlights.highlight(day),
         "left": left, "today_rows": log_rows(day, day, s),
         "tasks": task_list(day, s), "goals": goals, "budgets": metrics.budgets(day),
+        "weather": feeds.weather(s.weather_lat, s.weather_lon, s.timezone) if s.weather_lat is not None else None,
+        "events": feeds.events_on(s.calendar_url, day, s.tz) if s.calendar_url else None,
+        "calendar_on": bool(s.calendar_url),
         "first_steps": _first_steps(s, metrics.first_day()),
     })
 
@@ -149,14 +153,15 @@ def _spend_row(d: date, day_param: str) -> dict:
 
 
 def _sleep_row(d: date, today: date, s: AppSettings, day_param: str) -> dict:
-    night = SleepSession.objects.filter(day=d, wake_time__isnull=False).order_by("-wake_time").first()
+    stretches = metrics.night(d)
+    total = metrics.value("sleep.duration", d)
     row = {"kind": "sleep", "name": "Sleep", "slug": "sleep", "day": day_param, "url": reverse("web:sleep"),
-           "logged": night is not None, "value": night.duration_min if night else None, "in_bed": ""}
-    if night:
-        times = f"{fmt.clock(night.bedtime, s.tz)} → " if night.bedtime else ""
-        row["display"] = f"{fmt.minutes(night.duration_min)}" if night.duration_min is not None else "Woke up"
-        row["times"] = times + fmt.clock(night.wake_time, s.tz)
-    elif d == today:
+           "logged": bool(stretches), "value": total, "in_bed": "", "today": d == today}
+    if stretches:
+        row["display"] = fmt.minutes(total) if total is not None else "Woke up"
+        row["times"] = fmt.sleep_times(stretches, s.tz)
+        row["breaks"] = len(stretches) - 1
+    if d == today:  # "Going to bed" / "I'm up" work any number of times a night
         open_night = (SleepSession.objects.filter(wake_time__isnull=True, bedtime__isnull=False)
                       .order_by("-bedtime").first())
         if open_night:

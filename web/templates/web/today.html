@@ -5,6 +5,7 @@
   <div>
     <h1>{{ day|date:"l j" }}</h1>
     <p class="sub">Week {{ week_number }} · {{ week_start|date:"M j" }} – {{ week_end|date:"M j" }}</p>
+    {% if weather %}<p class="weather-line"><b>{{ weather.temp }}</b> {{ weather.summary }} · feels {{ weather.feels }} · {{ weather.high }} / {{ weather.low }}{% if weather.rain %} · <span class="rain">{{ weather.rain }}</span>{% endif %}</p>{% endif %}
   </div>
   <div class="actions">
     <a class="btn" href="{% url 'web:day' day.isoformat %}">Day view</a>
@@ -69,6 +70,20 @@
   </div>
 
   <div class="home-side">
+    {% if calendar_on %}
+    <section class="loglist" aria-labelledby="plan-title">
+      <header><h2 id="plan-title">Today's plan</h2><a class="link-quiet" href="{% url 'web:connections' %}">Calendar</a></header>
+      {% if events is None %}<p class="hint">Couldn't reach your calendar just now.</p>
+      {% else %}
+      {% for e in events %}
+      <div class="ev{% if e.next %} next{% endif %}{% if e.past %} past{% endif %}">
+        <span class="ev-time">{{ e.time }}</span>
+        <span class="ev-title">{{ e.title }}{% if e.next %} <span class="count-pill">Next</span>{% endif %}{% if e.where %}<small>{{ e.where }}</small>{% endif %}</span>
+      </div>
+      {% empty %}<p class="hint">Nothing on your calendar today.</p>{% endfor %}
+      {% endif %}
+    </section>
+    {% endif %}
     <section class="loglist tasks" aria-labelledby="tasks-title">
       <header><h2 id="tasks-title">Tasks</h2>{% if tasks.open %}<span class="count-pill quiet">{{ tasks.open|length }} open</span>{% endif %}</header>
       {% for item in tasks.open %}

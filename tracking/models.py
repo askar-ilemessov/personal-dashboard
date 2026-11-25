@@ -48,6 +48,12 @@ class AppSettings(OwnedModel):
     weekly_review_enabled = models.BooleanField(default=True, help_text="Send the weekly review on Telegram")
     weekly_review_time = models.TimeField(default=time(18, 0), help_text="Sunday, local time")
     last_reminder_day = models.DateField(null=True, blank=True, editable=False)
+    # Connections (web/feeds.py). The calendar link is a private URL: anyone
+    # with it can read the calendar, so it is never shown back in full.
+    weather_place = models.CharField(max_length=120, blank=True)
+    weather_lat = models.FloatField(null=True, blank=True)
+    weather_lon = models.FloatField(null=True, blank=True)
+    calendar_url = models.URLField(max_length=1000, blank=True)
     default_range = models.CharField(
         max_length=8, default="week", help_text="Range Trends and the detail pages open on: week, 30d, 90d or 1y"
     )

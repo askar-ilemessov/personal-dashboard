@@ -275,6 +275,26 @@ def _apply_expense(intent: ExpenseLog, ctx: _Ctx):
 
 
 OPEN_SESSION_WINDOW = timedelta(hours=20)
+# Two stretches of sleep this close together are one night with a break
+# (woke at 1:00, back asleep at 1:30), counted on the final wake day.
+NIGHT_GAP = timedelta(hours=2)
+
+
+def _join_night(session: SleepSession, ctx: "_Ctx"):
+    """Keep the stretches of one night on one wake day: the day of the last
+    stretch. Logged in order, earlier stretches move to this one's day;
+    logged out of order, this one takes the later stretch's day."""
+    if not (session.bedtime and session.wake_time):
+        return
+    later = (SleepSession.objects.exclude(pk=session.pk)
+             .filter(bedtime__gte=session.wake_time, bedtime__lte=session.wake_time + NIGHT_GAP)
+             .order_by("bedtime").first())
+    if later and later.day != session.day:
+        ctx.update(session, day=later.day)
+    for earlier in (SleepSession.objects.exclude(pk=session.pk)
+                    .filter(wake_time__lte=session.bedtime, wake_time__gte=session.bedtime - NIGHT_GAP)
+                    .exclude(day=session.day)):
+        ctx.update(earlier, day=session.day)
 
 
 def _apply_sleep(intent: SleepLog, ctx: _Ctx):
@@ -290,7 +310,20 @@ def _apply_sleep(intent: SleepLog, ctx: _Ctx):
     if bed and wake:
         if not timedelta(0) < wake - bed <= timedelta(hours=24):
             raise LogError("Wake time must be after bedtime, within 24 hours.")
-        ctx.create(SleepSession, bedtime=bed, wake_time=wake, day=wake_day(wake))
+        # A stretch that overlaps one already logged (or an open "went to
+        # bed") replaces it, so sending the same night twice (an iOS Shortcut
+        # that runs again, a correction) never counts it twice. Stretches
+        # that don't overlap are a night with a break and are both kept.
+        overlapping = (
+            SleepSession.objects.filter(bedtime__lt=wake, wake_time__gt=bed).first()
+            or SleepSession.objects.filter(wake_time__isnull=True, bedtime__lt=wake,
+                                           bedtime__gte=bed - NIGHT_GAP).order_by("-bedtime").first()
+        )
+        if overlapping:
+            night = ctx.update(overlapping, bedtime=bed, wake_time=wake, day=wake_day(wake))
+        else:
+            night = ctx.create(SleepSession, bedtime=bed, wake_time=wake, day=wake_day(wake))
+        _join_night(night, ctx)
     elif bed:
         provisional = intent.day or days.logical_day(bed, s) + timedelta(days=1)
         ctx.create(SleepSession, bedtime=bed, day=provisional)
@@ -303,7 +336,7 @@ def _apply_sleep(intent: SleepLog, ctx: _Ctx):
             .first()
         )
         if open_session:
-            ctx.update(open_session, wake_time=wake, day=wake_day(wake))
+            _join_night(ctx.update(open_session, wake_time=wake, day=wake_day(wake)), ctx)
         else:
             ctx.create(SleepSession, wake_time=wake, day=wake_day(wake))
 

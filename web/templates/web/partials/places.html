@@ -1,0 +1,10 @@
+{% if places %}
+<ul class="places">
+  {% for p in places %}
+  <li><form hx-post="{% url 'web:weather_set' %}" hx-swap="none">
+    <input type="hidden" name="name" value="{{ p.name }}"><input type="hidden" name="lat" value="{{ p.lat }}"><input type="hidden" name="lon" value="{{ p.lon }}">
+    <button class="chip">{{ p.label }}</button>
+  </form></li>
+  {% endfor %}
+</ul>
+{% else %}<p class="hint">No places called “{{ q }}”. Try the nearest city.</p>{% endif %}

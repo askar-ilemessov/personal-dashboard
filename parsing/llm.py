@@ -17,7 +17,7 @@ from tracking import days
 from tracking.logbook import DayNoteLog, DayTagLog, ExpenseLog, TrackerLog, WorkoutLog
 from tracking.models import AppSettings, ExchangeRate, ExpenseCategory, Tracker, Workout
 
-from .grammar import parse_clock, sleep_intent
+from .grammar import chain_sleep, parse_clock, sleep_intent
 
 NONE = "none"
 KINDS = ["tracker", "expense", "sleep", "workout", "note", "tags"]
@@ -104,7 +104,7 @@ Other kinds: sleep (bedtime and/or wake_time), note (free text about the day, in
 - One item per thing that happened. "two coffees and a beer" is two items.
 - Set only the fields that belong to an item's kind. Use "{NONE}" for the enum fields that do not apply, null for the other fields that do not apply, and [] for tags.
 - `replace` is true when the user states the day's total or says there was none ("no alcohol today", "3 coffees in total"). It is false when they report something to add ("had another coffee").
-- Do not calculate dates or timestamps. Report the day as `day_offset` using the list of recent days in the message, or as `date` if they wrote a calendar date. Report clock times as written, converted to 24h HH:MM. For sleep, give bedtime and wake_time as clock times; use "now" for "going to bed" or "just woke up".
+- Do not calculate dates or timestamps. Report the day as `day_offset` using the list of recent days in the message, or as `date` if they wrote a calendar date. Report clock times as written, converted to 24h HH:MM. For sleep, give bedtime and wake_time as clock times; use "now" for "going to bed" or "just woke up". If they woke up in the night and slept again, give one sleep item per stretch, in order.
 - For a scale tracker, log a value only if the user gives a number or an unmistakable rating. On a 1-5 scale: terrible 1, bad 2, okay 3, good 4, great 5.
 - If a spend has no obvious category, use "other" if that category exists; otherwise leave the spend out and mention it in `unparsed`.
 - Never invent a value, amount, time or category. If part of the message is unclear, is a question, or is not something to log, leave it out of `items` and quote that part in `unparsed`.
@@ -244,4 +244,4 @@ def to_intents(items: list, now: datetime, settings: AppSettings) -> tuple[list,
                 intents.append(DayTagLog(tags=tags, **when))
         else:
             problems.append("One item was of an unknown kind.")
-    return intents, problems
+    return chain_sleep(intents), problems
