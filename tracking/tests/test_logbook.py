@@ -393,3 +393,43 @@ def test_a_whole_night_completes_an_open_bedtime():
     log(SleepLog(bedtime=local(2026, 11, 14, 23, 30), wake_time=local(2026, 11, 15, 7, 10)))
     session = SleepSession.objects.get()
     assert session.duration_min == 460 and session.day == date(2026, 11, 15)
+
+
+# --- a night with a break ----------------------------------------------------------
+
+
+def test_stretches_logged_one_by_one_are_one_night():
+    W = date(2026, 11, 15)
+    log(SleepLog(bedtime=local(2026, 11, 14, 21, 0), wake_time=local(2026, 11, 14, 23, 30)))
+    assert SleepSession.objects.get().day == D  # alone, it ended on the 14th
+    op = log(SleepLog(bedtime=local(2026, 11, 15, 0, 30), wake_time=local(2026, 11, 15, 6, 40)))
+    assert set(SleepSession.objects.values_list("day", flat=True)) == {W}  # joined: the wake day
+    assert metrics.value("sleep.duration", W) == 150 + 370 and metrics.value("sleep.duration", D) is None
+    assert metrics.value("sleep.bedtime", W) == 9 * 60  # 21:00, the start of the night
+    assert metrics.value("sleep.wake", W) == 6 * 60 + 40
+    # Sending the first stretch again (a Shortcut that runs twice) doesn't double it.
+    log(SleepLog(bedtime=local(2026, 11, 14, 21, 0), wake_time=local(2026, 11, 14, 23, 30)))
+    assert SleepSession.objects.count() == 2 and metrics.value("sleep.duration", W) == 520
+    logbook.undo(op)
+    assert list(SleepSession.objects.values_list("day", flat=True)) == [D]
+
+
+def test_stretches_logged_out_of_order_still_join():
+    W = date(2026, 11, 15)
+    log(SleepLog(bedtime=local(2026, 11, 15, 0, 30), wake_time=local(2026, 11, 15, 6, 40)))
+    log(SleepLog(bedtime=local(2026, 11, 14, 21, 0), wake_time=local(2026, 11, 14, 23, 30)))
+    assert set(SleepSession.objects.values_list("day", flat=True)) == {W}
+
+
+def test_going_back_to_bed_with_the_buttons():
+    W = date(2026, 11, 15)
+    log(SleepLog(bedtime=local(2026, 11, 14, 22, 0)))
+    log(SleepLog(wake_time=local(2026, 11, 15, 1, 0)))
+    log(SleepLog(bedtime=local(2026, 11, 15, 1, 30)))
+    log(SleepLog(wake_time=local(2026, 11, 15, 6, 40)))
+    assert [n.duration_min for n in metrics.night(W)] == [180, 310]
+    assert metrics.value("sleep.duration", W) == 490
+    # A whole stretch typed later doesn't swallow an earlier open bedtime.
+    log(SleepLog(bedtime=local(2026, 11, 15, 22, 0)))
+    log(SleepLog(bedtime=local(2026, 11, 16, 2, 0), wake_time=local(2026, 11, 16, 7, 0)))
+    assert SleepSession.objects.filter(wake_time__isnull=True).count() == 1

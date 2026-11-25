@@ -64,11 +64,18 @@ def _clock_series(start: date, end: date, field: str, anchor_hour: int) -> Serie
     tz = AppSettings.load().tz
     out = _empty(start, end)
     sessions = SleepSession.objects.filter(day__range=(start, end), **{f"{field}__isnull": False})
-    for s in sessions.order_by("day", "id"):
+    # A night with a break has several stretches: bedtime is when the night
+    # started (the earliest), wake-up when it ended (the latest).
+    for s in sessions.order_by("day", field if field == "wake_time" else f"-{field}"):
         local = getattr(s, field).astimezone(tz)
-        if out[s.day] is None:  # the first (main) sleep of the day
-            out[s.day] = Decimal(((local.hour - anchor_hour) % 24) * 60 + local.minute)
+        out[s.day] = Decimal(((local.hour - anchor_hour) % 24) * 60 + local.minute)
     return out
+
+
+def night(day: date) -> list:
+    """The finished stretches of sleep that end on `day`, in order. One for an
+    unbroken night; more when you woke up and slept again."""
+    return list(SleepSession.objects.filter(day=day, wake_time__isnull=False).order_by("bedtime", "wake_time"))
 
 
 def _grouped(queryset, aggregate, start, end) -> Series:

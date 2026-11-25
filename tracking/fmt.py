@@ -66,3 +66,8 @@ def value(fmt: str, v) -> str:
     if fmt == "percent":
         return f"{round(float(v) * 100)}%"
     return number(v)
+
+
+def sleep_times(stretches, tz) -> str:
+    """"23:30 → 07:10", or "22:00 → 01:00, 01:30 → 06:40" for a night with a break."""
+    return ", ".join(f"{clock(n.bedtime, tz) + ' → ' if n.bedtime else ''}{clock(n.wake_time, tz)}" for n in stretches)

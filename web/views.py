@@ -334,9 +334,15 @@ def _mean_clock(moments, s, anchor_hour) -> str | None:
 
 def sleep(request):
     def extra(rng, s):
-        sessions = SleepSession.objects.filter(day__range=(rng["start"], rng["end"]))
-        bed = _mean_clock([x.bedtime for x in sessions if x.bedtime], s, 12)
-        wake = _mean_clock([x.wake_time for x in sessions if x.wake_time], s, 0)
+        # A night with a break counts once: its first bedtime, its last wake-up.
+        first_bed, last_wake = {}, {}
+        for x in SleepSession.objects.filter(day__range=(rng["start"], rng["end"])):
+            if x.bedtime and (x.day not in first_bed or x.bedtime < first_bed[x.day]):
+                first_bed[x.day] = x.bedtime
+            if x.wake_time and (x.day not in last_wake or x.wake_time > last_wake[x.day]):
+                last_wake[x.day] = x.wake_time
+        bed = _mean_clock(list(first_bed.values()), s, 12)
+        wake = _mean_clock(list(last_wake.values()), s, 0)
         return {"extra_stats": [{"label": "Average bedtime", "value": bed or "—"},
                                 {"label": "Average wake-up", "value": wake or "—"}]}
 

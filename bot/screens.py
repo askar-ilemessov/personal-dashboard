@@ -198,11 +198,13 @@ def sleep(arg=""):
     day = days.today(s)
     lines = ["<b>Sleep</b>", ""]
     open_night = SleepSession.objects.filter(wake_time__isnull=True, bedtime__isnull=False).order_by("-bedtime").first()
-    night = SleepSession.objects.filter(day=day, wake_time__isnull=False).order_by("-wake_time").first()
-    if night:
-        bed = fmt.clock(night.bedtime, s.tz) if night.bedtime else "?"
-        lines.append(f"Last night: {bed} → {fmt.clock(night.wake_time, s.tz)} · <b>{fmt.minutes(night.duration_min)}</b>"
-                     if night.duration_min is not None else f"Woke at {fmt.clock(night.wake_time, s.tz)}")
+    stretches = metrics.night(day)
+    total = metrics.value("sleep.duration", day)
+    if stretches:
+        times = fmt.sleep_times(stretches, s.tz)
+        lines.append(f"Last night: {times} · <b>{fmt.minutes(total)}</b>" if total is not None else f"Last night: {times}")
+        if len(stretches) > 1:
+            lines.append(f"<i>Woke {'once' if len(stretches) == 2 else f'{len(stretches) - 1} times'} in the night</i>")
     else:
         lines.append("Last night: not logged")
     if open_night:
@@ -460,7 +462,7 @@ def question(key: str) -> Question | None:
             return Question(f"{WORKOUT_ICONS.get(arg, '🏋️')} <b>{label}</b> · how many minutes?", "50", "gym")
     elif kind == "sleep":
         return Question("😴 <b>When did you sleep?</b>\n<i>Bed and wake times; start with “yesterday” "
-                        "for an earlier night.</i>", "23:30-7:10", "sleep")
+                        "for an earlier night. Woke up in the night? 22:00-1:00, 1:30-6:40</i>", "23:30-7:10", "sleep")
     elif kind == "note":
         return Question("📝 <b>Note for today</b>", "Felt great after the run", "home")
     elif kind == "tag":

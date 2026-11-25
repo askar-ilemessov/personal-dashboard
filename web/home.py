@@ -153,14 +153,15 @@ def _spend_row(d: date, day_param: str) -> dict:
 
 
 def _sleep_row(d: date, today: date, s: AppSettings, day_param: str) -> dict:
-    night = SleepSession.objects.filter(day=d, wake_time__isnull=False).order_by("-wake_time").first()
+    stretches = metrics.night(d)
+    total = metrics.value("sleep.duration", d)
     row = {"kind": "sleep", "name": "Sleep", "slug": "sleep", "day": day_param, "url": reverse("web:sleep"),
-           "logged": night is not None, "value": night.duration_min if night else None, "in_bed": ""}
-    if night:
-        times = f"{fmt.clock(night.bedtime, s.tz)} → " if night.bedtime else ""
-        row["display"] = f"{fmt.minutes(night.duration_min)}" if night.duration_min is not None else "Woke up"
-        row["times"] = times + fmt.clock(night.wake_time, s.tz)
-    elif d == today:
+           "logged": bool(stretches), "value": total, "in_bed": "", "today": d == today}
+    if stretches:
+        row["display"] = fmt.minutes(total) if total is not None else "Woke up"
+        row["times"] = fmt.sleep_times(stretches, s.tz)
+        row["breaks"] = len(stretches) - 1
+    if d == today:  # "Going to bed" / "I'm up" work any number of times a night
         open_night = (SleepSession.objects.filter(wake_time__isnull=True, bedtime__isnull=False)
                       .order_by("-bedtime").first())
         if open_night:

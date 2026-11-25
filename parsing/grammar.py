@@ -7,12 +7,13 @@ command palette, bot commands and (phase 4) as the fast path before the LLM.
     spent 12.5 food milk        $40 usd dining          18 transport uber
     gym legs 60                 cardio 35m easy run     screen 3h20
     woke 7:10                   slept 23:30             slept 23:30-7:10
+    slept 22:00-1:00, 1:30-6:40 (a night with a break: each stretch is a sleep session)
     mood 4, energy 3            read                    skip meditate
     #sick #travel               note: long day          yesterday coffee 3
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
@@ -147,9 +148,16 @@ class _Parser:
             if not clause:
                 continue
             try:
-                out.intents.extend(self._clause(clause.split()))
+                last = out.intents[-1] if out.intents else None
+                if (isinstance(last, SleepLog) and last.bedtime and last.wake_time
+                        and parse_clock(re.split(r"[-–→\s]", clause, maxsplit=1)[0])):
+                    # "slept 22:00-1:00, 1:30-6:40": another stretch of the same night
+                    out.intents.append(self._sleep(clause.split(), stretch=True))
+                else:
+                    out.intents.extend(self._clause(clause.split()))
             except _Unparsed as e:
                 out.errors.append(str(e) or f"Couldn't understand “{clause}”.")
+        out.intents = chain_sleep(out.intents)
         return out
 
     def _take_day(self, text: str) -> str:
@@ -281,7 +289,7 @@ class _Parser:
             raise _Unparsed("Add a time when backfilling, e.g. “yesterday woke 7:10”.")
         return sleep_intent(None, clock or "now", self.day, self.now, self.settings)
 
-    def _sleep(self, rest: list[str]) -> SleepLog:
+    def _sleep(self, rest: list[str], stretch: bool = False) -> SleepLog:
         joined = " ".join(rest).lower()
         parts = re.split(r"\s*(?:-|–|→|\bto\b|\buntil\b|\bwoke(?: up)?(?: at)?\b)\s*", joined, maxsplit=1)
         bed, extra = self._clock(parts[0].split())
@@ -292,6 +300,8 @@ class _Parser:
             wake, extra = self._clock(parts[1].split())
             if wake is None or extra:
                 raise _Unparsed(f"Couldn't read “{parts[1]}” as a wake time.")
+        if stretch and (bed is None or wake is None):
+            raise _Unparsed(f"Give each stretch of sleep both times, like “1:30-6:40” (not “{' '.join(rest)}”).")
         if bed is None and self.day:
             raise _Unparsed("Add a time when backfilling, e.g. “yesterday slept 23:30”.")
         return sleep_intent(bed or "now", wake, self.day, self.now, self.settings)
@@ -337,6 +347,34 @@ def sleep_intent(bed, wake, day: date | None, now: datetime, settings: AppSettin
             return SleepLog(bedtime=on_day(bed, -1 if bed.hour >= 15 else 0), day=day)
         return SleepLog(bedtime=moment(bed))
     raise ValueError("sleep needs a bedtime or a wake time")
+
+
+def chain_sleep(intents: list) -> list:
+    """Stretches of one night typed together ("22:00-1:00, 1:30-6:40").
+
+    Each stretch was dated on its own; here the last one stays put and every
+    earlier stretch is moved back by whole days until it ends at or before
+    the next one starts. All of them get the last stretch's wake day, so the
+    night is counted once, on the day you finally got up. Shared by the
+    grammar and the LLM tier."""
+    nights = [i for i, x in enumerate(intents) if isinstance(x, SleepLog) and x.bedtime and x.wake_time]
+    if len(nights) < 2:
+        return intents
+    out = list(intents)
+    last = out[nights[-1]]
+    day = last.day or last.wake_time.date()
+    following = last
+    for i in reversed(nights[:-1]):
+        x = out[i]
+        shift = timedelta(0)
+        while x.wake_time + shift > following.bedtime:
+            shift -= timedelta(days=1)
+        while x.wake_time + shift + timedelta(days=1) <= following.bedtime:
+            shift += timedelta(days=1)
+        x = replace(x, bedtime=x.bedtime + shift, wake_time=x.wake_time + shift, day=day)
+        out[i] = following = x
+    out[nights[-1]] = replace(last, day=day)
+    return out
 
 
 def parse(text: str, now: datetime | None = None) -> Parsed:

@@ -9,14 +9,16 @@
       <a class="pill-btn" href="{{ r.add_url }}">+ Add</a>
     {% elif r.kind == "sleep" %}
       <input type="hidden" name="kind" value="sleep">
-      {% if r.logged %}
-        <span class="logrow-value">{{ r.display }}</span><span class="logrow-sub">{{ r.times }}</span>
-      {% elif r.in_bed %}
-        <span class="logrow-sub">In bed since {{ r.in_bed }}</span>
+      {% if r.in_bed %}
+        {% if r.logged %}<span class="logrow-value">{{ r.display }}</span>{% endif %}
+        <span class="logrow-sub">{% if r.logged %}Back in bed{% else %}In bed{% endif %} since {{ r.in_bed }}</span>
         <button class="pill-btn yes" name="now" value="wake">I'm up</button>
+      {% elif r.logged %}
+        <span class="logrow-value">{{ r.display }}</span><span class="logrow-sub">{{ r.times }}{% if r.breaks %} · woke {% if r.breaks == 1 %}once{% else %}{{ r.breaks }} times{% endif %}{% endif %}</span>
+        {% if r.today %}<button class="pill-btn quiet" name="now" value="bed" type="submit">Going to bed</button>{% endif %}
       {% else %}
         <label class="visually-hidden" for="sleep-{{ r.day|default:'today' }}">Sleep times</label>
-        <input class="pill-input wide" id="sleep-{{ r.day|default:'today' }}" name="range" placeholder="23:30-7:10" autocomplete="off" inputmode="numeric">
+        <input class="pill-input wide" id="sleep-{{ r.day|default:'today' }}" name="range" placeholder="23:30-7:10" title="A night with a break: 22:00-1:00, 1:30-6:40" autocomplete="off" inputmode="numeric">
         {% if not r.day %}<button class="pill-btn quiet" name="now" value="bed" type="submit" formnovalidate>Going to bed</button>{% endif %}
       {% endif %}
     {% else %}
