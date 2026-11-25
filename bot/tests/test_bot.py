@@ -546,7 +546,10 @@ def test_sleep_screen_shows_a_night_with_a_break(db, owner):
 
     today = days.today()
     tz = AppSettings.load().tz
-    at = lambda d, h, m=0: datetime.combine(d, datetime.min.time(), tzinfo=tz).replace(hour=h, minute=m)  # noqa: E731
+
+    def at(d, h, m=0):
+        return datetime.combine(d, datetime.min.time(), tzinfo=tz).replace(hour=h, minute=m)
+
     logbook.apply([SleepLog(bedtime=at(today - timedelta(days=1), 22), wake_time=at(today, 1), day=today),
                    SleepLog(bedtime=at(today, 1, 30), wake_time=at(today, 6, 40), day=today)], source="telegram")
     text, _ = screens.sleep()
